@@ -1157,6 +1157,7 @@ static bool inode_dirtied_after(struct inode *inode, unsigned long t)
 
 /*
  * Move expired (dirtied before dirtied_before) dirty inodes from
+ * Move expired (dirtied before dirtied_before) dirty inodes from
  * @delaying_queue to @dispatch_queue.
  */
 static int move_expired_inodes(struct list_head *delaying_queue,
@@ -1220,8 +1221,11 @@ out:
  */
 static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work,
 		     unsigned long dirtied_before)
+static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work,
+		     unsigned long dirtied_before)
 {
 	int moved;
+	unsigned long time_expire_jif = dirtied_before;
 	unsigned long time_expire_jif = dirtied_before;
 
 	assert_spin_locked(&wb->list_lock);
