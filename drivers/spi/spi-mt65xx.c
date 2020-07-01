@@ -54,11 +54,13 @@
 #define SPI_CFG1_CS_IDLE_OFFSET           0
 #define SPI_CFG1_PACKET_LOOP_OFFSET       8
 #define SPI_CFG1_PACKET_LENGTH_OFFSET     16
-#define SPI_CFG1_GET_TICK_DLY_OFFSET      29
+#define SPI_CFG1_GET_TICK_DLY_OFFSET      30
 
 #define SPI_CFG1_CS_IDLE_MASK             0xff
 #define SPI_CFG1_PACKET_LOOP_MASK         0xff00
 #define SPI_CFG1_PACKET_LENGTH_MASK       0x3ff0000
+#define SPI_CFG2_SCK_HIGH_OFFSET          0
+#define SPI_CFG2_SCK_LOW_OFFSET           16
 
 #define SPI_CMD_ACT                  BIT(0)
 #define SPI_CMD_RESUME               BIT(1)
@@ -155,6 +157,7 @@ static const struct mtk_spi_compatible mt8173_compat = {
 static const struct mtk_chip_config mtk_default_chip_info = {
 	.rx_mlsb = 1,
 	.tx_mlsb = 1,
+	.cs_pol = 0,
 	.sample_sel = 0,
 
 	.cs_setuptime = 0,
@@ -347,12 +350,10 @@ static int mtk_spi_prepare_message(struct spi_master *master,
 #endif
 
 	if (mdata->dev_comp->enhance_timing) {
-		/* set CS polarity */
-		if (spi->mode & SPI_CS_HIGH)
+		if (chip_config->cs_pol)
 			reg_val |= SPI_CMD_CS_POL;
 		else
 			reg_val &= ~SPI_CMD_CS_POL;
-
 		if (chip_config->sample_sel)
 			reg_val |= SPI_CMD_SAMPLE_SEL;
 		else
@@ -423,15 +424,16 @@ static void mtk_spi_set_cs(struct spi_device *spi, bool enable)
 }
 
 static void mtk_spi_prepare_transfer(struct spi_master *master,
-			struct spi_transfer *xfer, struct spi_device *spi)
+				     struct spi_transfer *xfer)
 {
-	u32 div, sck_time, cs_time, reg_val = 0;
+	u32 spi_clk_hz, div, sck_time, cs_time, reg_val = 0;
 	struct mtk_spi *mdata = spi_master_get_devdata(master);
 	u32 cs_setuptime, cs_holdtime, cs_idletime = 0;
 	struct mtk_chip_config *chip_config = spi->controller_data;
 
-	if (xfer->speed_hz < mdata->spi_clk_hz / 2)
-		div = DIV_ROUND_UP(mdata->spi_clk_hz, xfer->speed_hz);
+	spi_clk_hz = clk_get_rate(mdata->spi_clk);
+	if (xfer->speed_hz < spi_clk_hz / 2)
+		div = DIV_ROUND_UP(spi_clk_hz, xfer->speed_hz);
 	else
 		div = 1;
 
@@ -454,33 +456,30 @@ static void mtk_spi_prepare_transfer(struct spi_master *master,
 		cs_idletime = cs_time;
 
 	if (mdata->dev_comp->enhance_timing) {
+		reg_val = (((sck_time - 1) & 0xffff)
+			   << SPI_CFG2_SCK_HIGH_OFFSET);
 		reg_val |= (((sck_time - 1) & 0xffff)
 			   << SPI_CFG0_SCK_HIGH_OFFSET);
 		reg_val |= (((sck_time - 1) & 0xffff)
 			   << SPI_ADJUST_CFG0_SCK_LOW_OFFSET);
 		writel(reg_val, mdata->base + SPI_CFG2_REG);
-
-		reg_val = 0;
-		reg_val |= (((cs_holdtime - 1) & 0xffff)
+		reg_val |= (((cs_time - 1) & 0xffff)
 			   << SPI_ADJUST_CFG0_CS_HOLD_OFFSET);
-		reg_val |= (((cs_setuptime - 1) & 0xffff)
+		reg_val |= (((cs_time - 1) & 0xffff)
 			   << SPI_ADJUST_CFG0_CS_SETUP_OFFSET);
 		writel(reg_val, mdata->base + SPI_CFG0_REG);
 	} else {
 		reg_val |= (((sck_time - 1) & 0xff)
 			   << SPI_CFG0_SCK_HIGH_OFFSET);
-		reg_val |= (((sck_time - 1) & 0xff) <<
-			SPI_CFG0_SCK_LOW_OFFSET);
-		reg_val |= (((cs_holdtime - 1) & 0xff) <<
-			SPI_CFG0_CS_HOLD_OFFSET);
-		reg_val |= (((cs_setuptime - 1) & 0xff) <<
-			SPI_CFG0_CS_SETUP_OFFSET);
+		reg_val |= (((sck_time - 1) & 0xff) << SPI_CFG0_SCK_LOW_OFFSET);
+		reg_val |= (((cs_time - 1) & 0xff) << SPI_CFG0_CS_HOLD_OFFSET);
+		reg_val |= (((cs_time - 1) & 0xff) << SPI_CFG0_CS_SETUP_OFFSET);
 		writel(reg_val, mdata->base + SPI_CFG0_REG);
 	}
 
 	reg_val = readl(mdata->base + SPI_CFG1_REG);
 	reg_val &= ~SPI_CFG1_CS_IDLE_MASK;
-	reg_val |= (((cs_idletime - 1) & 0xff) << SPI_CFG1_CS_IDLE_OFFSET);
+	reg_val |= (((cs_time - 1) & 0xff) << SPI_CFG1_CS_IDLE_OFFSET);
 	writel(reg_val, mdata->base + SPI_CFG1_REG);
 }
 
@@ -819,6 +818,7 @@ static int mtk_spi_probe(struct platform_device *pdev)
 	master->dev.of_node = pdev->dev.of_node;
 	master->mode_bits = SPI_CPOL | SPI_CPHA;
 
+	master->set_cs = mtk_spi_set_cs;
 	master->prepare_message = mtk_spi_prepare_message;
 	master->unprepare_message = mtk_spi_unprepare_message;
 	master->transfer_one = mtk_spi_transfer_one;
@@ -1022,7 +1022,6 @@ static int mtk_spi_probe(struct platform_device *pdev)
 	pr_info("num_chipselect=%d\n", master->num_chipselect);
 	return 0;
 
-
 err_disable_runtime_pm:
 	pm_runtime_disable(&pdev->dev);
 err_put_master:
@@ -1172,6 +1171,7 @@ static const struct dev_pm_ops mtk_spi_pm = {
 static struct platform_driver mtk_spi_driver = {
 	.driver = {
 		.name = "mtk-spi",
+		.pm	= &mtk_spi_pm,
 		.of_match_table = mtk_spi_of_match,
 	},
 	.probe = mtk_spi_probe,
