@@ -24,7 +24,7 @@
  * Note that it is a 5 byte unsigned long. Thus on 32 bit kernels, it is
  * truncated to a 4 byte number
  */
-#define INCFS_MAGIC_NUMBER (0x5346434e49ul & ULONG_MAX)
+#define INCFS_MAGIC_NUMBER (unsigned long)(0x5346434e49ul & ULONG_MAX)
 
 #define INCFS_DATA_FILE_BLOCK_SIZE 4096
 #define INCFS_HEADER_VER 1
