@@ -935,9 +935,10 @@ static inline void hid_map_usage(struct hid_input *hidinput,
 		__u8 type, unsigned int c)
 {
 	struct input_dev *input = hidinput->input;
-
 	unsigned long *bmap = NULL;
 	unsigned int limit = 0;
+	usage->type = type;
+	usage->code = c;
 
 	switch (type) {
 	case EV_ABS:
