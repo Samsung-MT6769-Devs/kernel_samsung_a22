@@ -521,8 +521,8 @@ static void fill_ac(struct bsd_acct_struct *acct)
 	ac->ac_gid = from_kgid_munged(file->f_cred->user_ns, current_gid());
 #if ACCT_VERSION == 1 || ACCT_VERSION == 2
 	/* backward-compatible 16 bit fields */
-	ac->ac_uid16 = ac->ac_uid;
-	ac->ac_gid16 = ac->ac_gid;
+	ac.ac_uid16 = ac.ac_uid;
+	ac.ac_gid16 = ac.ac_gid;
 #elif ACCT_VERSION == 3
 	{
 		struct pid_namespace *ns = acct->ns;
