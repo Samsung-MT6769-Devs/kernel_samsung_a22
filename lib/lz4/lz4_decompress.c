@@ -117,6 +117,153 @@ static FORCE_INLINE int LZ4_decompress_generic(
 	if ((endOnInput) && unlikely(srcSize == 0))
 		return -1;
 
+#if LZ4_FAST_DEC_LOOP
+	if ((oend - op) < FASTLOOP_SAFE_DISTANCE) {
+		DEBUGLOG(6, "skip fast decode loop");
+		goto safe_decode;
+	}
+
+	/* Fast loop : decode sequences as long as output < iend-FASTLOOP_SAFE_DISTANCE */
+	while (1) {
+		/* Main fastloop assertion: We can always wildcopy FASTLOOP_SAFE_DISTANCE */
+		assert(oend - op >= FASTLOOP_SAFE_DISTANCE);
+		if (endOnInput) {
+			assert(ip < iend);
+		}
+		token = *ip++;
+		length = token >> ML_BITS;	/* literal length */
+
+		assert(!endOnInput || ip <= iend);	/* ip < iend before the increment */
+
+		/* decode literal length */
+		if (length == RUN_MASK) {
+			variable_length_error error = ok;
+			length +=
+			    read_variable_length(&ip, iend - RUN_MASK,
+						 endOnInput, endOnInput,
+						 &error);
+			if (error == initial_error) {
+				goto _output_error;
+			}
+			if ((safeDecode)
+			    && unlikely((uptrval) (op) + length <
+					(uptrval) (op))) {
+				goto _output_error;
+			}	/* overflow detection */
+			if ((safeDecode)
+			    && unlikely((uptrval) (ip) + length <
+					(uptrval) (ip))) {
+				goto _output_error;
+			}
+
+			/* overflow detection */
+			/* copy literals */
+			cpy = op + length;
+			LZ4_STATIC_ASSERT(MFLIMIT >= WILDCOPYLENGTH);
+			if (endOnInput) {	/* LZ4_decompress_safe() */
+				if ((cpy > oend - 32)
+				    || (ip + length > iend - 32)) {
+					goto safe_literal_copy;
+				}
+				LZ4_wildCopy32(op, ip, cpy);
+			} else {	/* LZ4_decompress_fast() */
+				if (cpy > oend - 8) {
+					goto safe_literal_copy;
+				}
+				LZ4_wildCopy8(op, ip, cpy);
+				/* LZ4_decompress_fast() cannot copy more than 8 bytes at a time */
+				/* it doesn't know input length, and only relies on end-of-block */
+				/* properties */
+			}
+			ip += length;
+			op = cpy;
+		} else {
+			cpy = op + length;
+			if (endOnInput) {	/* LZ4_decompress_safe() */
+				DEBUGLOG(7,
+					 "copy %u bytes in a 16-bytes stripe",
+					 (unsigned)length);
+				/* We don't need to check oend */
+				/* since we check it once for each loop below */
+				if (ip > iend - (16 + 1)) {	/*max lit + offset + nextToken */
+					goto safe_literal_copy;
+				}
+				/* Literals can only be 14, but hope compilers optimize */
+				/*if we copy by a register size */
+				memcpy(op, ip, 16);
+			} else {
+				/* LZ4_decompress_fast() cannot copy more than 8 bytes at a time */
+				/* it doesn't know input length, and relies on end-of-block */
+				/* properties */
+				memcpy(op, ip, 8);
+				if (length > 8) {
+					memcpy(op + 8, ip + 8, 8);
+				}
+			}
+			ip += length;
+			op = cpy;
+		}
+
+		/* get offset */
+		offset = LZ4_readLE16(ip);
+		ip += 2;	/* end-of-block condition violated */
+		match = op - offset;
+
+		/* get matchlength */
+		length = token & ML_MASK;
+
+		if ((checkOffset) && (unlikely(match + dictSize < lowPrefix))) {
+			goto _output_error;
+		}
+		/* Error : offset outside buffers */
+		if (length == ML_MASK) {
+			variable_length_error error = ok;
+			length +=
+			    read_variable_length(&ip, iend - LASTLITERALS + 1,
+						 endOnInput, 0, &error);
+			if (error != ok) {
+				goto _output_error;
+			}
+			if ((safeDecode)
+			    && unlikely((uptrval) (op) + length < (uptrval) op)) {
+				goto _output_error;
+			}	/* overflow detection */
+			length += MINMATCH;
+			if (op + length >= oend - FASTLOOP_SAFE_DISTANCE) {
+				goto safe_match_copy;
+			}
+		} else {
+			length += MINMATCH;
+			if (op + length >= oend - FASTLOOP_SAFE_DISTANCE) {
+				goto safe_match_copy;
+			}
+
+			/* Fastpath check: Avoids a branch in LZ4_wildCopy32 if true */
+			if ((match >= lowPrefix)) {
+				if (offset >= 8) {
+					memcpy(op, match, 8);
+					memcpy(op + 8, match + 8, 8);
+					memcpy(op + 16, match + 16, 2);
+					op += length;
+					continue;
+				}
+			}
+		}
+
+		/* copy match within block */
+		cpy = op + length;
+
+		assert((op <= oend) && (oend - op >= 32));
+		if (unlikely(offset < 16)) {
+			LZ4_memcpy_using_offset(op, match, cpy, offset);
+		} else {
+			LZ4_wildCopy32(op, match, cpy);
+		}
+
+		op = cpy;	/* wildcopy correction */
+	}
+      safe_decode:
+#endif
 	/* Main Loop : decode sequences */
 	while (1) {
 		size_t length;
