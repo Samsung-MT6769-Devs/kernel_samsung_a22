@@ -5459,7 +5459,8 @@ ext4_mballoc_query_range(
 
 	ext4_lock_group(sb, group);
 
-	start = max(e4b.bd_info->bb_first_free, first);
+	start = (e4b.bd_info->bb_first_free > first) ?
+		e4b.bd_info->bb_first_free : first;
 	if (end >= EXT4_CLUSTERS_PER_GROUP(sb))
 		end = EXT4_CLUSTERS_PER_GROUP(sb) - 1;
 	if (meta_formatter && start != first) {
