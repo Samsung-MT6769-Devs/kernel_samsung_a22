@@ -210,6 +210,11 @@ static int mtk_reset_handler(struct notifier_block *this, unsigned long mode,
 	mtk_wdt = container_of(this, struct mtk_wdt_dev, restart_handler);
 	wdt_base = mtk_wdt->wdt_base;
 
+	/* Enable reset in order to issue a system reset instead of an IRQ */
+	reg = readl(wdt_base + WDT_MODE);
+	reg &= ~WDT_MODE_IRQ_EN;
+	writel(reg | WDT_MODE_KEY, wdt_base + WDT_MODE);
+
 /*
  * WDT_STATUS will be cleared to  zero after writing to WDT_MODE,
  * so we backup it in WDT_NONRST_REG,
