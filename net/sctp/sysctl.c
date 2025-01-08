@@ -330,8 +330,7 @@ static int proc_sctp_do_hmac_alg(struct ctl_table *ctl, int write,
 				void __user *buffer, size_t *lenp,
 				loff_t *ppos)
 {
-	struct net *net = container_of(ctl->data, struct net,
-				       sctp.sctp_hmac_alg);
+	struct net *net = container_of(ctl->data, struct net, sctp.auth_enable);
 	struct ctl_table tbl;
 	bool changed = false;
 	char *none = "none";
