@@ -5009,11 +5009,11 @@ void skb_scrub_packet(struct sk_buff *skb, bool xnet)
 	skb->offload_fwd_mark = 0;
 #endif
 	ipvs_reset(skb);
+	skb_orphan(skb);
 
 	if (!xnet)
 		return;
 
-	skb_orphan(skb);
 	skb->mark = 0;
 }
 EXPORT_SYMBOL_GPL(skb_scrub_packet);
