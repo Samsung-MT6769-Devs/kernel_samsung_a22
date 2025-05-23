@@ -1014,23 +1014,6 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
 	mapping = file->f_mapping;
 	inode = mapping->host;
 
-	size = get_loop_size(lo, file);
-
-	if ((config->info.lo_flags & ~LOOP_CONFIGURE_SETTABLE_FLAGS) != 0) {
-		error = -EINVAL;
-		goto out_putf;
-	}
-
-	if (config->block_size) {
-		error = loop_validate_block_size(config->block_size);
-		if (error)
-			goto out_putf;
-	}
-
-	error = loop_set_status_from_info(lo, &config->info);
-	if (error)
-		goto out_putf;
-
 	if (!(file->f_mode & FMODE_WRITE) || !(mode & FMODE_WRITE) ||
 	    !file->f_op->write_iter)
 		lo_flags |= LO_FLAGS_READ_ONLY;
@@ -1098,43 +1081,6 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
 	/* This is safe: open() is still holding a reference. */
 	module_put(THIS_MODULE);
 	return error;
-}
-
-static int
-loop_release_xfer(struct loop_device *lo)
-{
-	int err = 0;
-	struct loop_func_table *xfer = lo->lo_encryption;
-
-	if (xfer) {
-		if (xfer->release)
-			err = xfer->release(lo);
-		lo->transfer = NULL;
-		lo->lo_encryption = NULL;
-		module_put(xfer->owner);
-	}
-	return err;
-}
-
-static int
-loop_init_xfer(struct loop_device *lo, struct loop_func_table *xfer,
-	       const struct loop_info64 *i)
-{
-	int err = 0;
-
-	if (xfer) {
-		struct module *owner = xfer->owner;
-
-		if (!try_module_get(owner))
-			return -EINVAL;
-		if (xfer->init)
-			err = xfer->init(lo, i);
-		if (err)
-			module_put(owner);
-		else
-			lo->lo_encryption = xfer;
-	}
-	return err;
 }
 
 static int loop_clr_fd(struct loop_device *lo)
@@ -1539,79 +1485,66 @@ out_unfreeze:
 }
 
 static int lo_ioctl(struct block_device *bdev, fmode_t mode,
-	unsigned int cmd, unsigned long arg)
+					unsigned int cmd, unsigned long arg)
 {
 	struct loop_device *lo = bdev->bd_disk->private_data;
-	void __user *argp = (void __user *) arg;
 	int err;
 
 	mutex_lock_nested(&lo->lo_ctl_mutex, 1);
 	switch (cmd) {
-	case LOOP_SET_FD:
-		err = loop_set_fd(lo, mode, bdev, arg);
+		case LOOP_SET_FD:
+			err = loop_set_fd(lo, mode, bdev, arg);
+			break;
+		case LOOP_CHANGE_FD:
+			err = loop_change_fd(lo, bdev, arg);
+			break;
+		case LOOP_CLR_FD:
+			/* loop_clr_fd would have unlocked lo_ctl_mutex on success */
+			err = loop_clr_fd(lo);
+			if (!err)
+				goto out_unlocked;
 		break;
-	}
-	case LOOP_CONFIGURE: {
-		struct loop_config config;
-
-		if (copy_from_user(&config, argp, sizeof(config))) {
-			mutex_unlock(&lo->lo_ctl_mutex);
-			return -EFAULT;
-		}
-
-		err = loop_configure(lo, mode, bdev, &config);
-		break;
-	}
-	case LOOP_CHANGE_FD:
-		err = loop_change_fd(lo, bdev, arg);
-		break;
-	case LOOP_CLR_FD:
-		/* loop_clr_fd would have unlocked lo_ctl_mutex on success */
-		err = loop_clr_fd(lo);
-		if (!err)
+		case LOOP_SET_STATUS:
+			err = -EPERM;
+			if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
+				err = loop_set_status_old(lo,
+										  (struct loop_info __user *)arg);
+				break;
+		case LOOP_GET_STATUS:
+			err = loop_get_status_old(lo, (struct loop_info __user *) arg);
+			/* loop_get_status() unlocks lo_ctl_mutex */
 			goto out_unlocked;
+		case LOOP_SET_STATUS64:
+			err = -EPERM;
+			if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
+				err = loop_set_status64(lo,
+										(struct loop_info64 __user *) arg);
+				break;
+		case LOOP_GET_STATUS64:
+			err = loop_get_status64(lo, (struct loop_info64 __user *) arg);
+			/* loop_get_status() unlocks lo_ctl_mutex */
+			goto out_unlocked;
+		case LOOP_SET_CAPACITY:
+			err = -EPERM;
+			if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
+				err = loop_set_capacity(lo);
 		break;
-	case LOOP_SET_STATUS:
-		err = -EPERM;
-		if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
-			err = loop_set_status_old(lo,
-					(struct loop_info __user *)arg);
+		case LOOP_SET_DIRECT_IO:
+			err = -EPERM;
+			if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
+				err = loop_set_dio(lo, arg);
 		break;
-	case LOOP_GET_STATUS:
-		err = loop_get_status_old(lo, (struct loop_info __user *) arg);
-		/* loop_get_status() unlocks lo_ctl_mutex */
-		goto out_unlocked;
-	case LOOP_SET_STATUS64:
-		err = -EPERM;
-		if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
-			err = loop_set_status64(lo,
-					(struct loop_info64 __user *) arg);
+		case LOOP_SET_BLOCK_SIZE:
+			err = -EPERM;
+			if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
+				err = loop_set_block_size(lo, arg);
 		break;
-	case LOOP_GET_STATUS64:
-		err = loop_get_status64(lo, (struct loop_info64 __user *) arg);
-		/* loop_get_status() unlocks lo_ctl_mutex */
-		goto out_unlocked;
-	case LOOP_SET_CAPACITY:
-		err = -EPERM;
-		if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
-			err = loop_set_capacity(lo);
-		break;
-	case LOOP_SET_DIRECT_IO:
-		err = -EPERM;
-		if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
-			err = loop_set_dio(lo, arg);
-		break;
-	case LOOP_SET_BLOCK_SIZE:
-		err = -EPERM;
-		if ((mode & FMODE_WRITE) || capable(CAP_SYS_ADMIN))
-			err = loop_set_block_size(lo, arg);
-		break;
-	default:
-		err = lo->ioctl ? lo->ioctl(lo, cmd, arg) : -EINVAL;
+		default:
+			err = lo->ioctl ? lo->ioctl(lo, cmd, arg) : -EINVAL;
 	}
 	mutex_unlock(&lo->lo_ctl_mutex);
 
-out_unlocked:
+	out_unlocked:
 	return err;
 }
 
