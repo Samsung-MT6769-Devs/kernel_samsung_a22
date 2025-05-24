@@ -166,6 +166,8 @@ Documentation/sphinx_*/
 *.tmp
 build/
 out/
+out/.*
+out/*
 arch/arm64/boot/Image
 
 

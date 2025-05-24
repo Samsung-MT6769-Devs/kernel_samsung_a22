@@ -44,7 +44,7 @@ struct task_security_struct {
 /*
  * get the subjective security ID of the current task
  */
-u32 current_sid(void)
+static inline u32 current_sid(void)
 {
     const struct task_security_struct* tsec = current_security();
 
