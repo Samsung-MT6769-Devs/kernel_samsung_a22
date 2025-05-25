@@ -72,7 +72,6 @@ static inline void apply_alternatives_module(void *start, size_t length) { }
 	"662:\n"							\
 	".pushsection .altinstructions,\"a\"\n"				\
 	ALTINSTR_ENTRY(feature)						\
-	".popsection\n"							\
 	".pushsection .altinstr_replacement, \"a\"\n"			\
 	"663:\n\t"							\
 	newinstr "\n"							\

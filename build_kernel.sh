@@ -1,7 +1,7 @@
 #!/bin/bash
 
-export CROSS_COMPILE="$(which ccache) $(pwd)/toolchain/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-"
-export CC="$(which ccache) $(pwd)/toolchain/clang/host/linux-x86/clang-r383902/bin/clang"
+export CROSS_COMPILE="$(pwd)/toolchain/arm-gnu-toolchain-14.2.rel1-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-"
+export CC="$(pwd)/toolchain/clang/host/linux-x86/clang-r416183b/bin/clang"
 export CLANG_TRIPLE=aarch64-linux-gnu-
 export ARCH=arm64
 
