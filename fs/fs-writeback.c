@@ -1214,11 +1214,8 @@ out:
  */
 static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work,
 		     unsigned long dirtied_before)
-static void queue_io(struct bdi_writeback *wb, struct wb_writeback_work *work,
-		     unsigned long dirtied_before)
 {
 	int moved;
-	unsigned long time_expire_jif = dirtied_before;
 	unsigned long time_expire_jif = dirtied_before;
 
 	assert_spin_locked(&wb->list_lock);
