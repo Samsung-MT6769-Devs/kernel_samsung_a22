@@ -846,7 +846,6 @@ static int acc_open(struct inode *ip, struct file *fp)
 		put_acc_dev(dev);
 		return -EBUSY;
 	}
-	printk(KERN_INFO "usb: acc_open\n");	}
 
 	dev->disconnected = 0;
 	fp->private_data = dev;
@@ -941,7 +940,7 @@ int acc_ctrlrequest(struct usb_composite_dev *cdev,
  *			w_value, w_index, w_length);
 */
 	if (!dev)
-		goto err;
+		return -ENODEV;
 #ifdef CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE
 	cdev->req->complete = acc_ctrlrequest_complete;
 #endif

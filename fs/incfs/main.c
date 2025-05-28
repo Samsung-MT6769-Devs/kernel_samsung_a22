@@ -11,6 +11,8 @@
 #include "sysfs.h"
 #include "vfs.h"
 
+#define INCFS_NODE_FEATURES "features"
+
 static struct file_system_type incfs_fs_type = {
 	.owner = THIS_MODULE,
 	.name = INCFS_NAME,

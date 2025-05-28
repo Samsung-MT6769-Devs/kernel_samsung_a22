@@ -2392,12 +2392,15 @@ void drop_collected_mounts(struct vfsmount *mnt)
 static bool has_locked_children(struct mount *mnt, struct dentry *dentry)
 {
 	struct mount *child;
-
 	list_for_each_entry(child, &mnt->mnt_mounts, mnt_child) {
 		if (!is_subdir(child->mnt_mountpoint, dentry))
 			continue;
 
+#if defined(CONFIG_KDP_NS) || defined(CONFIG_RUSTUH_KDP_NS)
+		if (child->mnt->mnt_flags & MNT_LOCKED)
+#else
 		if (child->mnt.mnt_flags & MNT_LOCKED)
+#endif
 			return true;
 	}
 	return false;
@@ -2777,22 +2780,6 @@ static int do_change_type(struct path *path, int ms_flags)
 	return err;
 }
 
-static bool has_locked_children(struct mount *mnt, struct dentry *dentry)
-{
-	struct mount *child;
-	list_for_each_entry(child, &mnt->mnt_mounts, mnt_child) {
-		if (!is_subdir(child->mnt_mountpoint, dentry))
-			continue;
-
-#if defined(CONFIG_KDP_NS) || defined(CONFIG_RUSTUH_KDP_NS)
-		if (child->mnt->mnt_flags & MNT_LOCKED)
-#else
-		if (child->mnt.mnt_flags & MNT_LOCKED)
-#endif
-			return true;
-	}
-	return false;
-}
 
 /*
  * do loopback mount.

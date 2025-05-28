@@ -43,7 +43,6 @@ struct list_lru binder_alloc_lru;
 static DEFINE_MUTEX(binder_alloc_mmap_lock);
 
 enum {
-	BINDER_DEBUG_USER_ERROR             = 1U << 0,
 	BINDER_DEBUG_OPEN_CLOSE             = 1U << 1,
 	BINDER_DEBUG_BUFFER_ALLOC           = 1U << 2,
 	BINDER_DEBUG_BUFFER_ALLOC_ASYNC     = 1U << 3,
@@ -570,7 +569,6 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 	buffer->async_transaction = is_async;
 	buffer->extra_buffers_size = extra_buffers_size;
 	buffer->pid = pid;
-	buffer->oneway_spam_suspect = false;
 	if (is_async) {
 		alloc->free_async_space -= size;
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC_ASYNC,
@@ -582,10 +580,8 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 			 * of async space left (which is less than 10% of total
 			 * buffer size).
 			 */
-			buffer->oneway_spam_suspect = debug_low_async_space_locked(alloc, pid);
-		} else {
-			alloc->oneway_spam_detected = false;
-		}
+			debug_low_async_space_locked(alloc, pid);
+		} 
 	}
 	return buffer;
 

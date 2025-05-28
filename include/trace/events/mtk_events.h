@@ -319,7 +319,8 @@ TRACE_EVENT(hps_update,
 		__entry->down_avg = down_avg;
 		__entry->tlp_avg = tlp_avg;
 		__entry->rush_cnt = rush_cnt;
-		__assign_str(target, target);),
+		__assign_str(target, target);
+	),
 
 	TP_printk
 	("(0x%X)%s action end (%u)(%u)(%u) %s %s%s (%u)(%u)(%u)(%u) %s",

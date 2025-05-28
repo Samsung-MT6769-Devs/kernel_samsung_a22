@@ -1345,22 +1345,7 @@ static int mmc_blk_part_switch_post(struct mmc_card *card,
 			return ret;
 	}
 #else
-
-#if defined(CONFIG_MTK_EMMC_CQ_SUPPORT) || defined(CONFIG_MTK_EMMC_HW_CQ)
-	if (part_type == EXT_CSD_PART_CONFIG_ACC_RPMB)
-		mmc_retune_unpause(card->host);
-
-	/* enable cmdq
-	 * if partition supports cmdq
-	 */
-	if ((!mmc_card_cmdq(card)) && (part_type <= PART_CMDQ_EN)) {
-		ret = mmc_cmdq_enable(card);
-		if (ret)
-			return ret;
-	}
-#else
-
-	if (part_type == EXT_CSD_PART_CONFIG_ACC_RPMB) {
+	if ((part_type & mask) == rpmb) {
 		mmc_retune_unpause(card->host);
 		if (card->reenable_cmdq && !card->ext_csd.cmdq_en)
 			ret = mmc_cmdq_enable(card);

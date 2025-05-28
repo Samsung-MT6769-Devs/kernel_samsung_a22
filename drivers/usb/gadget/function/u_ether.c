@@ -60,7 +60,7 @@
  * frame sizes. Set the max MTU size to 15k+52 to prevent allocating 32k
  * blocks and still have efficient handling. */
 #define GETHER_MAX_MTU_SIZE 15412
-#define GETHER_MAX_ETH_FRAME_LEN 15412
+#define GETHER_MAX_ETH_FRAME_LEN (GETHER_MAX_MTU_SIZE + ETH_HLEN)
 
 static struct workqueue_struct	*uether_wq;
 static struct workqueue_struct	*uether_wq1;
@@ -1304,6 +1304,13 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g,
 	dev->qmult = qmult;
 	snprintf(net->name, sizeof(net->name), "%s%%d", netname);
 
+#if 0
+	if (get_ether_addr(dev_addr, net->dev_addr))
+		dev_info(&g->dev, "using random %s ethernet address\n", "self");
+
+	if (get_ether_addr(host_addr, dev->host_mac))
+		dev_info(&g->dev, "using random %s ethernet address\n", "host");
+#else
 	if (get_ether_addr(dev_addr, net->dev_addr)) {
 		net->addr_assign_type = NET_ADDR_RANDOM;
 		dev_warn(&g->dev,
@@ -1311,12 +1318,6 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g,
 	} else {
 		net->addr_assign_type = NET_ADDR_SET;
 	}
-	if (get_ether_addr(host_addr, dev->host_mac))
-		dev_info(&g->dev, "using random %s ethernet address\n", "host");
-#else
-	if (get_ether_addr(dev_addr, net->dev_addr))
-		dev_warn(&g->dev,
-			"using random %s ethernet address\n", "self");
 
 	ether_addr_copy(dev->host_mac, a);
 	pr_debug("%s, tjrndis1: %x:%x:%x:%x:%x:%x\n", __func__,
@@ -1331,6 +1332,10 @@ struct eth_dev *gether_setup_name(struct usb_gadget *g,
 	net->netdev_ops = &eth_netdev_ops;
 
 	net->ethtool_ops = &ops;
+
+	/* MTU range: 14 - 15412 */
+	net->min_mtu = ETH_HLEN;
+	net->max_mtu = GETHER_MAX_MTU_SIZE;
 
 	dev->gadget = g;
 	SET_NETDEV_DEV(net, &g->dev);
