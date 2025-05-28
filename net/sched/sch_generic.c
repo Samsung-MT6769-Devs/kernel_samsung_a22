@@ -30,6 +30,7 @@
 #include <net/pkt_sched.h>
 #include <net/dst.h>
 #include <trace/events/qdisc.h>
+#include <net/xfrm.h>
 
 /* Qdisc to use by default */
 const struct Qdisc_ops *default_qdisc_ops = &pfifo_fast_ops;
@@ -119,6 +120,8 @@ static struct sk_buff *dequeue_skb(struct Qdisc *q, bool *validate,
 	if (unlikely(skb)) {
 		/* skb in gso_skb were already validated */
 		*validate = false;
+		if (xfrm_offload(skb))
+			*validate = true;
 		/* check the reason of requeuing without tx lock first */
 		txq = skb_get_tx_queue(txq->dev, skb);
 		if (!netif_xmit_frozen_or_stopped(txq)) {
@@ -172,13 +175,23 @@ int sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 		    spinlock_t *root_lock, bool validate)
 {
 	int ret = NETDEV_TX_BUSY;
+	bool again = false;
 
 	/* And release qdisc */
 	spin_unlock(root_lock);
 
 	/* Note that we validate skb (GSO, checksum, ...) outside of locks */
 	if (validate)
-		skb = validate_xmit_skb_list(skb, dev);
+		skb = validate_xmit_skb_list(skb, dev, &again);
+
+#ifdef CONFIG_XFRM_OFFLOAD
+	if (unlikely(again)) {
+		if (root_lock)
+			spin_lock(root_lock);
+		dev_requeue_skb(skb, q);
+		return false;
+	}
+#endif
 
 	if (likely(skb)) {
 		HARD_TX_LOCK(dev, txq, smp_processor_id());
@@ -251,7 +264,7 @@ static inline int qdisc_restart(struct Qdisc *q, int *packets)
 
 void __qdisc_run(struct Qdisc *q)
 {
-	int quota = dev_tx_weight;
+	int quota = READ_ONCE(dev_tx_weight);
 	int packets;
 
 	while (qdisc_restart(q, &packets)) {
@@ -341,6 +354,7 @@ void __netdev_watchdog_up(struct net_device *dev)
 			dev_hold(dev);
 	}
 }
+EXPORT_SYMBOL_GPL(__netdev_watchdog_up);
 
 static void dev_watchdog_up(struct net_device *dev)
 {
@@ -1009,6 +1023,7 @@ void psched_ratecfg_precompute(struct psched_ratecfg *r,
 {
 	memset(r, 0, sizeof(*r));
 	r->overhead = conf->overhead;
+	r->mpu = conf->mpu;
 	r->rate_bytes_ps = max_t(u64, conf->rate, rate64);
 	r->linklayer = (conf->linklayer & TC_LINKLAYER_MASK);
 	r->mult = 1;

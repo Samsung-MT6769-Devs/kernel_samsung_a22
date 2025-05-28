@@ -104,6 +104,7 @@ static void __proc_set_tty(struct tty_struct *tty)
 	put_pid(tty->pgrp);
 	tty->pgrp = get_pid(task_pgrp(current));
 	tty->session = get_pid(task_session(current));
+	tty->session = get_pid(task_session(current));
 	spin_unlock_irqrestore(&tty->ctrl_lock, flags);
 	if (current->signal->tty) {
 		tty_debug(tty, "current tty %s not NULL!!\n",
@@ -309,6 +310,16 @@ void disassociate_ctty(int on_exit)
 		tty_unlock(tty);
 		tty_kref_put(tty);
 	}
+
+	/* If tty->ctrl.pgrp is not NULL, it may be assigned to
+	 * current->signal->tty_old_pgrp in a race condition, and
+	 * cause pid memleak. Release current->signal->tty_old_pgrp
+	 * after tty->ctrl.pgrp set to NULL.
+	 */
+	spin_lock_irq(&current->sighand->siglock);
+	put_pid(current->signal->tty_old_pgrp);
+	current->signal->tty_old_pgrp = NULL;
+	spin_unlock_irq(&current->sighand->siglock);
 
 	/* Now clear signal->tty under the lock */
 	read_lock(&tasklist_lock);
