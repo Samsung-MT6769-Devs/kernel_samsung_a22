@@ -82,6 +82,8 @@ modules.builtin
 #
 include/config
 include/generated
+compile_commands.json
+arch/arm64/boot/Image
 arch/*/include/generated
 
 # stgit generated dirs
