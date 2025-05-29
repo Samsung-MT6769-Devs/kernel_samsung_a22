@@ -1,3 +1,5 @@
+# Linux Kernel Development .gitignore
+
 #
 # NOTE! Don't add files that are generated in specific
 # subdirectories here. Add them in the ".gitignore" file
@@ -18,15 +20,16 @@
 *.dtb.S
 *.dwo
 *.elf
-*.gcno
 *.gz
 *.i
 *.ko
+*.lex.c
 *.ll
 *.lst
 *.lz4
 *.lzma
 *.lzo
+*.mod
 *.mod.c
 *.o
 *.o.*
@@ -66,6 +69,11 @@ modules.builtin
 /debian/
 
 #
+# Snap directory (make snap-pkg)
+#
+/snap/
+
+#
 # tar directory (make tar*-pkg)
 #
 /tar-install/
@@ -76,38 +84,45 @@ modules.builtin
 !.gitignore
 !.mailmap
 !.cocciconfig
+!.clang-format
+!.gitmodules
 
 #
 # Generated include files
 #
 include/config
 include/generated
-compile_commands.json
-arch/arm64/boot/Image
 arch/*/include/generated
 
+#
 # stgit generated dirs
+#
 patches-*
 
+#
 # quilt's files
+#
 patches
 series
 
+#
 # cscope files
+#
 cscope.*
 ncscope.*
 
+#
 # gnu global files
+#
 GPATH
 GRTAGS
 GSYMS
 GTAGS
 
+#
 # id-utils files
+#
 ID
-
-*~
-\#*#
 
 #
 # Leavings from module signing
@@ -118,17 +133,189 @@ signing_key.priv
 signing_key.x509
 x509.genkey
 
+#
 # Kconfig presets
+#
 all.config
 
+#
 # Kdevelop4
+#
 *.kdev4
 
+#
 # fetched Android config fragments
+#
 kernel/configs/android-*.cfg
 
-# Build output
-out/
+#
+# Documentation toolchain
+#
+Documentation/output/
+Documentation/sphinx_*/
 
-# toolchain
+#
+# Build artifacts
+#
+*.builtin
+*.cmd
+*.d
+*.tmp_versions/
+*.symvers
+*.markers
+*.tmp
+build/
+out/
+out/.*
+out/*
+arch/arm64/boot/Image
+
+
+#
+# Backup files
+#
+*~
+*.orig
+*.rej
+*.backup
+*.bak
+
+#
+# Patch files
+#
+*.patch
+*.diff
+
+#
+# LSP and IDE files
+#
+compile_commands.json
+.clangd/
+.cache/
+.ccls-cache/
+.vscode/
+.idea/
+
+#
+# Kate/KDevelop project files
+#
+.kateproject*
+*.kdev4
+.kdevelop.filelist
+
+#
+# Editor temporary files
+#
+.*.swp
+.*.swo
+*~
+\#*\#
+.#*
+
+#
+# OS generated files
+#
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+#
+# Custom build directories
+#
+build*/
+out*/
+output*/
+
+#
+# Kernel packaging
+#
+*.deb
+*.rpm
+*.pkg.tar.xz
+
+#
+# Security related
+#
+*.pem
+*.key
+*.crt
+*.csr
+
+#
+# Custom configuration files (keep your local configs private)
+#
+.config.local
+localversion*
+
+#
+# Bear generated files
+#
+.bear/
+
+#
+# Compilation database
+#
+compile_flags.txt
+
+#
+# Static analysis
+#
+.scan-build/
+scan-build-*/
+
+#
+# Valgrind
+#
+*.valgrind
+
+#
+# GDB files
+#
+.gdb_history
+gdb.txt
+
+#
+# Core dumps
+#
+core
+core.*
+vgcore.*
+
+#
+# Profiling
+#
+*.gcov
+*.gcda
+*.gcno
+gmon.out
+
+#
+# Custom scripts and tools (optional - uncomment if you have these)
+#
+# scripts/local/
+# tools/local/
+
+#
+# Logging and debugging
+#
+*.log
+debug/
+logs/
+
+#
+# Testing artifacts
+#
+test-results/
+*.test
+
+#
+# Temporary build files from external tools
+#
+.tmp_*
+
+# Toolchain
 toolchain/
