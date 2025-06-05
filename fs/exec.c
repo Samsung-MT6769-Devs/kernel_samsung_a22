@@ -63,6 +63,7 @@
 #include <linux/compat.h>
 #include <linux/vmalloc.h>
 #include <linux/task_integrity.h>
+#include <linux/ksm.h>
 
 #include <linux/uaccess.h>
 #include <asm/mmu_context.h>
