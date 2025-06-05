@@ -739,6 +739,9 @@ config PELT_UTIL_HALFLIFE_8
 	  decay of utlization and load four time as fast as for the default
 	  configuration using 32ms.
 
+config PELT_UTIL_HALFLIFE_4
+	bool "8/4 ms, more faster"
+
 endchoice
 
 endmenu # FAIR Scheduler tunables"
@@ -1338,8 +1341,6 @@ config BPF
 
 menuconfig EXPERT
 	bool "Configure standard kernel features (expert users)"
-	# Unhide debug options, to make the on-by-default options visible
-	select DEBUG_KERNEL
 	help
 	  This option allows certain base kernel options and settings
           to be disabled or tweaked. This is for specialized

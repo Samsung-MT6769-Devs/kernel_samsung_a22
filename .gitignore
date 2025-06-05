@@ -319,3 +319,7 @@ test-results/
 
 # Toolchain
 toolchain/
+
+# KernelSU
+KernelSU-Next/
+susfs4ksu/
