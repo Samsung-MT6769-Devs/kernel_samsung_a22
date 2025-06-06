@@ -1,5 +1,28 @@
 #!/bin/bash
 
+# Parse command line arguments
+QUIET_MODE=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -q|--quiet)
+            QUIET_MODE=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [-q|--quiet]"
+            echo "  -q, --quiet    Only show errors during make operations"
+            exit 1
+            ;;
+    esac
+done
+# Create logs directory
+LOG_DIR="${PWD}/logs"
+mkdir -p "$LOG_DIR"
+
+# Timestamp for the log filename
+BUILD_LOG="${LOG_DIR}/build_$(date +%Y%m%d_%H%M%S).log"
+
 # Color definitions for better readability
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -48,6 +71,7 @@ show_build_info() {
     echo -e "  ${CYAN}Git Commit:${NC} $(git rev-parse --short HEAD 2>/dev/null || echo 'N/A')"
     echo -e "  ${CYAN}Git Branch:${NC} $(git symbolic-ref --short HEAD 2>/dev/null || echo 'N/A')"
     echo -e "  ${CYAN}Kernel Image:${NC} $(ls -lh out/arch/arm64/boot/Image 2>/dev/null | awk '{print $5}' || echo 'Not found')"
+    echo -e "  ${CYAN}Log Saved To:${NC} $BUILD_LOG"
 }
 
 # Function to create flashable zip
@@ -131,7 +155,7 @@ create_flashable_zip() {
 BUILD_START_TIME=$(date +%s)
 
 print_section "ANDROID KERNEL BUILD SCRIPT"
-print_status "Starting build process for Android Kernel 4.14"
+print_status "Starting build process for Android Kernel $(make kernelversion)"
 
 # Define paths and toolchain
 PREFIX="$(pwd)"
@@ -230,6 +254,12 @@ KCFLAGS=-w \
 CONFIG_SECTION_MISMATCH_WARN_ONLY=y \
 KBUILD_BUILD_USER=\"$(git rev-parse --short HEAD | cut -c1-7)\" \
 KBUILD_BUILD_HOST=\"$(git symbolic-ref --short HEAD)\""
+
+if [ "$QUIET_MODE" = true ]; then
+    BUILD_CMD="$BUILD_CMD > \"$BUILD_LOG\" 2>&1"
+else
+    BUILD_CMD="$BUILD_CMD 2>&1 | tee \"$BUILD_LOG\""
+fi
 
 if eval $BUILD_CMD; then
     print_success "Kernel compilation completed successfully"

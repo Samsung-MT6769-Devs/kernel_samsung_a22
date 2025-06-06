@@ -170,6 +170,9 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
 	if (sugov_up_down_rate_limit(sg_policy, time, next_freq))
 		return;
 
+	if (sg_policy->next_freq == next_freq)
+		return;
+
 	sg_policy->next_freq = next_freq;
 	sg_policy->last_freq_update_time = time;
 
@@ -187,7 +190,6 @@ static void sugov_update_commit(struct sugov_policy *sg_policy, u64 time,
 			return;
 
 		policy->cur = next_freq;
-		trace_cpu_frequency(next_freq, smp_processor_id());
 	} else {
 		sg_policy->work_in_progress = true;
 		irq_work_queue(&sg_policy->irq_work);
@@ -335,6 +337,9 @@ static bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu)
 #else
 static inline bool sugov_cpu_is_busy(struct sugov_cpu *sg_cpu) { return false; }
 #endif /* CONFIG_NO_HZ_COMMON */
+
+#define NL_RATIO 75
+#define DEFAULT_HISPEED_LOAD CONFIG_SCHEDUTIL_DEFAULT_HISPEED_LOAD
 
 static void sugov_update_single(struct update_util_data *hook, u64 time,
 				unsigned int flags)
@@ -822,8 +827,10 @@ static int sugov_init(struct cpufreq_policy *policy)
 		goto stop_kthread;
 	}
 
-	tunables->up_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
-	tunables->down_rate_limit_us = cpufreq_policy_transition_delay_us(policy);
+	tunables->up_rate_limit_us =
+				CONFIG_SCHEDUTIL_UP_RATE_LIMIT;
+	tunables->down_rate_limit_us =
+				CONFIG_SCHEDUTIL_DOWN_RATE_LIMIT;
 
 	policy->governor_data = sg_policy;
 	sg_policy->tunables = tunables;
