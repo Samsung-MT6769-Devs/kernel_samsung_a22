@@ -972,11 +972,11 @@ static int crypto_test_show(struct seq_file *m, void *v)
 		case -ERANGE:
 			p = ERR_RANGE; break;
 		case -ENOENT:
-			p = ENOENT; break;
+			p = ERR_NOENT; break;
 		case -EOPNOTSUPP:
 			p = ERR_OPNOTSUPP; break;
 	}
-	
+
 	switch(tc_status) {
 		default:
 		case 0:
