@@ -169,7 +169,7 @@ out/
 out/.*
 out/*
 arch/arm64/boot/Image
-
+AnyKernel3/
 
 #
 # Backup files
