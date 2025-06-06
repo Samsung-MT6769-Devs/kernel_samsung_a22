@@ -155,7 +155,7 @@ create_flashable_zip() {
 BUILD_START_TIME=$(date +%s)
 
 print_section "ANDROID KERNEL BUILD SCRIPT"
-print_status "Starting build process for Android Kernel 4.14"
+print_status "Starting build process for Android Kernel $(make kernelversion)"
 
 # Define paths and toolchain
 PREFIX="$(pwd)"
