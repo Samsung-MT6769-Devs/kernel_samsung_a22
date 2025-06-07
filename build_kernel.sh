@@ -124,7 +124,7 @@ prompt_for_toolchain() {
     local max_attempts=3
 
     while [ $attempts -lt $max_attempts ]; do
-        read -p "Enter toolchain path (or 'quit' to exit): " user_path
+        read -p "Enter toolchain path, e.g /clang/ NOT /clang/bin (or 'quit' to exit): " user_path
 
         if [ "$user_path" = "quit" ] || [ "$user_path" = "q" ]; then
             print_status "Build cancelled by user"
@@ -183,6 +183,7 @@ show_build_info() {
 
 # Function to create flashable zip
 create_flashable_zip() {
+    # Change this to an AnyKernel3 ZIP without the Image file in it
     local source_zip="/home/zears/Documents/WMKernel-ksunext-susfs.zip"
     local anykernel_dir="$PREFIX/AnyKernel3"
     local kernel_image="$PREFIX/arch/arm64/boot/Image"
