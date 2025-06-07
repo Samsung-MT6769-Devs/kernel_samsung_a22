@@ -58,6 +58,113 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to verify toolchain functionality
+verify_toolchain() {
+    local toolchain_path="$1"
+
+    # Check if path is provided and not empty
+    if [ -z "$toolchain_path" ]; then
+        return 1
+    fi
+
+    local bin_path="$toolchain_path/bin"
+
+    # Check if toolchain directory exists
+    if [ ! -d "$toolchain_path" ]; then
+        return 1
+    fi
+
+    # Check if bin directory exists
+    if [ ! -d "$bin_path" ]; then
+        return 1
+    fi
+
+    # Temporarily add to PATH for testing
+    local old_path="$PATH"
+    export PATH="$bin_path:$PATH"
+
+    # Test essential tools
+    local required_tools=("clang" "llvm-ar" "llvm-nm" "ld.lld" "llvm-objcopy" "llvm-objdump" "llvm-strip")
+    local missing_tools=()
+
+    for tool in "${required_tools[@]}"; do
+        if ! command_exists "$tool"; then
+            missing_tools+=("$tool")
+        fi
+    done
+
+    # Restore PATH
+    export PATH="$old_path"
+
+    if [ ${#missing_tools[@]} -gt 0 ]; then
+        return 1
+    fi
+
+    # Test clang version
+    if [ -x "$bin_path/clang" ]; then
+        local clang_version=$("$bin_path/clang" --version 2>/dev/null | head -n1)
+        if [ -n "$clang_version" ]; then
+            print_success "Clang version: $clang_version"
+        else
+            return 1
+        fi
+    else
+        return 1
+    fi
+
+    return 0
+}
+
+# Function to prompt for toolchain path
+prompt_for_toolchain() {
+    echo
+
+    local user_path
+    local attempts=0
+    local max_attempts=3
+
+    while [ $attempts -lt $max_attempts ]; do
+        read -p "Enter toolchain path, e.g /clang/ NOT /clang/bin (or 'quit' to exit): " user_path
+
+        if [ "$user_path" = "quit" ] || [ "$user_path" = "q" ]; then
+            print_status "Build cancelled by user"
+            exit 0
+        fi
+
+        if [ -z "$user_path" ]; then
+            print_error "Please enter a valid path"
+            ((attempts++))
+            continue
+        fi
+
+        # Expand tilde if present
+        user_path="${user_path/#\~/$HOME}"
+
+        # Check if directory exists
+        if [ ! -d "$user_path" ]; then
+            print_error "Directory does not exist: $user_path"
+            ((attempts++))
+            continue
+        fi
+
+        # Verify the toolchain
+        if verify_toolchain "$user_path"; then
+            echo "$user_path"
+            return 0
+        else
+            print_error "Toolchain verification failed for: $user_path"
+            ((attempts++))
+
+            if [ $attempts -lt $max_attempts ]; then
+                echo "Please try again (attempt $((attempts + 1))/$max_attempts)"
+            fi
+        fi
+    done
+
+    print_error "Maximum attempts reached. Unable to find a valid toolchain."
+    exit 1
+}
+
 # Function to display build summary
 show_build_info() {
     local start_time=$1
@@ -76,6 +183,7 @@ show_build_info() {
 
 # Function to create flashable zip
 create_flashable_zip() {
+    # Change this to an AnyKernel3 ZIP without the Image file in it
     local source_zip="/home/zears/Documents/WMKernel-ksunext-susfs.zip"
     local anykernel_dir="$PREFIX/AnyKernel3"
     local kernel_image="$PREFIX/arch/arm64/boot/Image"
@@ -155,7 +263,7 @@ create_flashable_zip() {
 BUILD_START_TIME=$(date +%s)
 
 print_section "ANDROID KERNEL BUILD SCRIPT"
-print_status "Starting build process for Android Kernel $(make kernelversion)"
+print_status "Starting build process for Android Kernel $(make kernelversion 2>/dev/null || echo 'Unknown')"
 
 # Define paths and toolchain
 PREFIX="$(pwd)"
@@ -163,39 +271,47 @@ print_status "Working directory: $PREFIX"
 
 # Check if custom LLVM toolchain exists, otherwise use default
 print_section "TOOLCHAIN DETECTION"
-if [ -d "/home/zears/tc-build/build/llvm/final/bin" ]; then
-    CLANG_DIR="/home/zears/tc-build/build/llvm/final"
+CLANG_DIR=""
+
+# Check predefined locations
+if [ -d "/home/zears/clang-wmk/bin" ]; then
+    CLANG_DIR="/home/zears/clang-wmk"
     print_success "Found custom LLVM toolchain: $CLANG_DIR"
 
-    # Check clang version
-    if [ -x "$CLANG_DIR/bin/clang" ]; then
-        CLANG_VERSION=$("$CLANG_DIR/bin/clang" --version | head -n1)
-        print_status "Clang version: $CLANG_VERSION"
-    fi
-else
-    CLANG_DIR="${PREFIX}/toolchain/clang/host/linux-x86/clang-r383902"
-    print_warning "Custom toolchain not found, using default: $CLANG_DIR"
-
-    if [ ! -d "$CLANG_DIR" ]; then
-        print_error "Default toolchain directory not found!"
-        exit 1
+    # Verify the found toolchain
+    if ! verify_toolchain "$CLANG_DIR"; then
+        print_error "Custom toolchain verification failed, trying default location"
+        CLANG_DIR=""
     fi
 fi
 
-# Verify essential tools exist
-print_section "TOOLCHAIN VERIFICATION"
+if [ -z "$CLANG_DIR" ] && [ -d "${PREFIX}/toolchain/clang/host/linux-x86/clang-r383902/bin" ]; then
+    CLANG_DIR="${PREFIX}/toolchain/clang/host/linux-x86/clang-r383902"
+    print_success "Found default toolchain: $CLANG_DIR"
+
+    # Verify the found toolchain
+    if ! verify_toolchain "$CLANG_DIR"; then
+        print_error "Default toolchain verification failed"
+        CLANG_DIR=""
+    fi
+fi
+
+if [ -z "$CLANG_DIR" ]; then
+    # No valid toolchain found, prompt user
+    CLANG_DIR=$(prompt_for_toolchain)
+    print_success "Using user-provided toolchain: $CLANG_DIR"
+fi
+
+# Set up environment
+print_section "ENVIRONMENT SETUP"
 export PATH="$CLANG_DIR/bin:$PATH"
 export ARCH=arm64
 
-REQUIRED_TOOLS=("clang" "llvm-ar" "llvm-nm" "ld.lld" "llvm-objcopy" "llvm-objdump" "llvm-strip")
-for tool in "${REQUIRED_TOOLS[@]}"; do
-    if command_exists "$tool"; then
-        print_success "$tool found"
-    else
-        print_error "$tool not found in PATH"
-        exit 1
-    fi
-done
+# Display clang version
+if [ -x "$CLANG_DIR/bin/clang" ]; then
+    CLANG_VERSION=$("$CLANG_DIR/bin/clang" --version | head -n1)
+    print_status "Using: $CLANG_VERSION"
+fi
 
 # Check for ccache and set CC accordingly
 if command_exists "ccache"; then
@@ -215,6 +331,7 @@ export KCFLAGS=-w
 export CONFIG_SECTION_MISMATCH_WARN_ONLY=y
 
 print_status "Architecture: arm64"
+print_status "Compiler: $CC_CMD"
 print_status "Suppressing warnings: enabled"
 print_status "Section mismatch warnings only: enabled"
 

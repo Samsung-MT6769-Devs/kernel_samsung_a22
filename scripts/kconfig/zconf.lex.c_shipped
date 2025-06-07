@@ -856,9 +856,6 @@ static void alloc_string(const char *str, int size)
 
 static void warn_ignored_character(char chr)
 {
-	fprintf(stderr,
-	        "%s:%d:warning: ignoring unsupported character '%c'\n",
-	        zconf_curname(), zconf_lineno(), chr);
 }
 
 #define INITIAL 0
