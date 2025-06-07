@@ -313,17 +313,7 @@ if [ -x "$CLANG_DIR/bin/clang" ]; then
     print_status "Using: $CLANG_VERSION"
 fi
 
-# Check for ccache and set CC accordingly
-if command_exists "ccache"; then
-    print_success "ccache found - build acceleration enabled"
-    ccache -z > /dev/null 2>&1  # Reset stats
-    CC_CMD="ccache clang"
-    CCACHE_AVAILABLE=true
-else
-    print_warning "ccache not found - builds will be slower"
-    CC_CMD="clang"
-    CCACHE_AVAILABLE=false
-fi
+CC_CMD="clang"
 
 # Build configuration
 print_section "BUILD CONFIGURATION"
@@ -395,12 +385,6 @@ if [ -f "out/arch/arm64/boot/Image" ]; then
 else
     print_error "Kernel image not found at expected location"
     exit 1
-fi
-
-# Show ccache statistics
-if [ "$CCACHE_AVAILABLE" = true ]; then
-    print_section "CCACHE STATISTICS"
-    ccache -s
 fi
 
 # Build completion
