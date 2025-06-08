@@ -371,6 +371,7 @@ HOST_LFS_LIBS := $(shell getconf LFS_LIBS 2>/dev/null)
 ifneq ($(LLVM),)
 HOSTCC	= clang
 HOSTCXX	= clang++
+HOSTLD = ld.lld
 else
 HOSTCC	= gcc
 HOSTCXX	= g++
@@ -379,6 +380,7 @@ HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 \
 		-fomit-frame-pointer -std=gnu89 $(HOST_LFS_CFLAGS)
 HOSTCXXFLAGS := -O3 $(HOST_LFS_CFLAGS)
 HOSTLDFLAGS  += $(HOST_LFS_LDFLAGS)
+HOSTLDFLAGS += -fuse-ld=lld
 HOST_LOADLIBES := $(HOST_LFS_LIBS)
 
 # Make variables (CC, etc...)
@@ -411,8 +413,7 @@ DEPMOD		= depmod
 PERL		= perl
 PYTHON		= python
 CHECK		= sparse
-HOSTLDFLAGS	+= -fuse-ld=lld
-HOSTCFLAGS	+= -fuse-ld=lld
+
 
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
