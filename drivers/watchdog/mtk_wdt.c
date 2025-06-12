@@ -206,6 +206,7 @@ static int mtk_reset_handler(struct notifier_block *this, unsigned long mode,
 	struct mtk_wdt_dev *mtk_wdt;
 	void __iomem *wdt_base;
 	u32 reg;
+	u32 reg;
 
 	mtk_wdt = container_of(this, struct mtk_wdt_dev, restart_handler);
 	wdt_base = mtk_wdt->wdt_base;

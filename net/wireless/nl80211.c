@@ -2783,6 +2783,11 @@ static int parse_monitor_flags(struct nlattr *nla, u32 *mntrflags)
 	    *mntrflags != MONITOR_FLAG_COOK_FRAMES)
 		return -EOPNOTSUPP;
 
+	/* cooked monitor mode is incompatible with other modes */
+	if (*mntrflags & MONITOR_FLAG_COOK_FRAMES &&
+	    *mntrflags != MONITOR_FLAG_COOK_FRAMES)
+		return -EOPNOTSUPP;
+
 	*mntrflags |= MONITOR_FLAG_CHANGED;
 
 	return 0;
