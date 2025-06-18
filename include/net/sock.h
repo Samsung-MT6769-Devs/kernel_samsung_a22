@@ -1734,6 +1734,8 @@ static inline void sk_tx_queue_set(struct sock *sk, int tx_queue)
 	sk->sk_tx_queue_mapping = tx_queue;
 }
 
+#define NO_QUEUE_MAPPING	USHRT_MAX
+
 static inline void sk_tx_queue_clear(struct sock *sk)
 {
 	sk->sk_tx_queue_mapping = NO_QUEUE_MAPPING;
