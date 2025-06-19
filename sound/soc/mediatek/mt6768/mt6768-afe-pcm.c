@@ -3379,20 +3379,6 @@ static int mt6768_afe_pcm_dev_probe(struct platform_device *pdev)
 	for (i = 0; i < afe->irqs_size; i++)
 		afe->irqs[i].irq_data = &irq_data[i];
 
-#if !defined(CONFIG_FPGA_EARLY_PORTING)
-	/* request irq */
-	irq_id = platform_get_irq(pdev, 0);
-	if (irq_id <= 0) {
-		dev_err(dev, "%pOFn no irq found\n", dev->of_node);
-		return irq_id < 0 ? irq_id : -ENXIO;
-	}
-	ret = devm_request_irq(dev, irq_id, mt6768_afe_irq_handler,
-			       IRQF_TRIGGER_LOW, "Afe_ISR_Handle", (void *)afe);
-	if (ret) {
-		dev_err(dev, "could not request_irq for Afe_ISR_Handle\n");
-		return ret;
-	}
-#endif
 
 	/* init sub_dais */
 	INIT_LIST_HEAD(&afe->sub_dais);
@@ -3454,6 +3440,21 @@ static int mt6768_afe_pcm_dev_probe(struct platform_device *pdev)
 #if defined(CONFIG_SND_SOC_MTK_AUDIO_DSP) ||\
 	defined(CONFIG_SND_SOC_MTK_SCP_SMARTPA)
 	audio_set_dsp_afe(afe);
+#endif
+
+#if !defined(CONFIG_FPGA_EARLY_PORTING)
+	/* request irq */
+	irq_id = platform_get_irq(pdev, 0);
+	if (irq_id <= 0) {
+		dev_err(dev, "%pOFn no irq found\n", dev->of_node);
+		goto err_dai_component;
+	}
+	ret = devm_request_irq(dev, irq_id, mt6768_afe_irq_handler,
+			       IRQF_TRIGGER_LOW, "Afe_ISR_Handle", (void *)afe);
+	if (ret) {
+		dev_err(dev, "could not request_irq for Afe_ISR_Handle\n");
+		goto err_dai_component;
+	}
 #endif
 
 	dev_info(dev, "%s(), return 0\n", __func__);
