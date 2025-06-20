@@ -519,14 +519,6 @@ int parsing_bypass_data(char *dataframe, int *index, int frame_len)
 		}
 		EXECUTE_FUNC(sensor, sensor->funcs->report_event);
 		shub_report_sensordata(type, event->timestamp, event->value, sensor->report_event_size);
-#ifdef CONFIG_SHUB_DEBUG
-		shub_system_check_lock();
-		if (is_system_checking())
-			event_test_cb(type, event->timestamp);
-		if (is_event_order_checking())
-			order_test_cb(type, event->timestamp);
-		shub_system_check_unlock();
-#endif
 		batch_event_count--;
 	} while ((batch_event_count > 0) && ((*index) < frame_len));
 
@@ -586,13 +578,6 @@ int parsing_meta_data(char *dataframe, int *index, int frame_len)
 	} else {
 		shub_errf("failed to alloc");
 	}
-
-#ifdef CONFIG_SHUB_DEBUG
-	shub_system_check_lock();
-	if (is_system_checking())
-		comm_test_cb(type);
-	shub_system_check_unlock();
-#endif
 
 	kfree(meta_event);
 	return ret;
