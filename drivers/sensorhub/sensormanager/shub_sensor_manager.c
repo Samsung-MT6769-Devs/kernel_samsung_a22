@@ -509,18 +509,32 @@ int parsing_bypass_data(char *dataframe, int *index, int frame_len)
 	}
 
 	event = get_sensor_event(type);
-	memcpy(&batch_event_count, dataframe + (*index), 2);
+
+	// Boundary check before reading batch_event_count
+	if ((*index) + sizeof(u16) > frame_len) {
+		shub_errf("Parsing error: not enough data for batch count for sensor %d\n", type);
+		return -EINVAL;
+	}
+
+	memcpy(&batch_event_count, dataframe + (*index), sizeof(u16));
 	(*index) += 2;
 
-	do {
+	// THE FIX: Use a 'while' loop instead of 'do-while'.
+	// This ensures we don't enter the loop if batch_event_count is 0.
+	while ((batch_event_count > 0) && ((*index) < frame_len)) {
 		if (get_sensor_value(type, dataframe, index, event, frame_len) < 0) {
-			shub_errf("Parsing error : sensor(%d) event error", type);
+			shub_errf("Parsing error : sensor(%d) event error\n", type);
+			/*
+			 * If we fail to parse one event in a batch, it's safer
+			 * to stop processing the entire corrupt batch.
+			 */
 			return -EINVAL;
 		}
+
 		EXECUTE_FUNC(sensor, sensor->funcs->report_event);
 		shub_report_sensordata(type, event->timestamp, event->value, sensor->report_event_size);
 		batch_event_count--;
-	} while ((batch_event_count > 0) && ((*index) < frame_len));
+	}
 
 	return 0;
 }

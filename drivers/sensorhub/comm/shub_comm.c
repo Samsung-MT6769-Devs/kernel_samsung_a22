@@ -251,7 +251,7 @@ void clean_pending_list(void)
 
 static int parse_dataframe(char *dataframe, int frame_len)
 {
-	int index;
+	int index = 0;
 	int ret = 0;
 	struct shub_sensor *sensor;
 
@@ -260,11 +260,21 @@ static int parse_dataframe(char *dataframe, int frame_len)
 		return 0;
 	}
 
-	// print_dataframe(data, dataframe, frame_len);
-
-	for (index = 0; index < frame_len && (ret == 0);) {
-		int cmd = dataframe[index++];
+	// Use a 'while' loop for clearer boundary control.
+	while (index < frame_len) {
+		int cmd;
 		int reset_type, no_event_type;
+		int prev_index = index; // Store the index before it's modified
+
+		cmd = dataframe[index++];
+		if (index > frame_len) {
+			/* This should not be reachable due to the while loop,
+			 * but it's a failsafe for the index++ operation.
+			 */
+			shub_errf("Read past buffer end trying to get cmd\n");
+			ret = -EINVAL;
+			break;
+		}
 
 		switch (cmd) {
 		case SHUB2AP_DEBUG_DATA:
@@ -281,13 +291,19 @@ static int parse_dataframe(char *dataframe, int frame_len)
 			break;
 		case SHUB2AP_GYRO_CAL:
 			sensor = get_sensor(SENSOR_TYPE_GYROSCOPE);
-			if (sensor)
+			if (sensor && sensor->funcs && sensor->funcs->parsing_data)
+				// FIX: Capture the return value
 				ret = sensor->funcs->parsing_data(dataframe, &index, frame_len);
+			else
+				shub_errf("No parser for GYRO_CAL\n");
 			break;
 		case SHUB2AP_MAG_CAL:
 			sensor = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD);
-			if (sensor)
+			if (sensor && sensor->funcs && sensor->funcs->parsing_data)
+				// FIX: Capture the return value
 				ret = sensor->funcs->parsing_data(dataframe, &index, frame_len);
+			else
+				shub_errf("No parser for MAG_CAL\n");
 			break;
 		case SHUB2AP_SYSTEM_INFO:
 			ret = print_system_info(dataframe + index, &index, frame_len);
@@ -312,8 +328,11 @@ static int parse_dataframe(char *dataframe, int frame_len)
 			break;
 		case SHUB2AP_PROX_THRESH:
 			sensor = get_sensor(SENSOR_TYPE_PROXIMITY);
-			if (sensor)
-				sensor->funcs->parsing_data(dataframe, &index, frame_len);
+			if (sensor && sensor->funcs && sensor->funcs->parsing_data)
+				// FIX: Capture the return value
+				ret = sensor->funcs->parsing_data(dataframe, &index, frame_len);
+			else
+				shub_errf("No parser for PROX_THRESH\n");
 			break;
 		case SHUB2AP_LOG_DUMP:
 			ret = save_log_dump(dataframe, &index, frame_len);
@@ -322,15 +341,37 @@ static int parse_dataframe(char *dataframe, int frame_len)
 			ret = parsing_big_data(dataframe, &index, frame_len);
 			break;
 		default:
-			shub_errf("0x%x cmd doesn't support, index = %d", cmd, index);
-			ret = -1;
+			shub_errf("0x%x cmd doesn't support, index = %d\n", cmd, index);
+			// FIX: Use standard error code
+			ret = -EOPNOTSUPP;
 			break;
 		}
+
+		/*
+		 * CRITICAL FIX: After each case, validate the new index value.
+		 * 1. Ensure the index has not gone out of bounds.
+		 * 2. Ensure the index has actually advanced, to prevent infinite loops.
+		 */
+		if (index > frame_len) {
+			shub_errf("CRITICAL: Buffer over-read detected after cmd 0x%x. index=%d, frame_len=%d\n",
+				  cmd, index, frame_len);
+			ret = -EINVAL; // Set error and break
+		}
+
+		if (index <= prev_index) {
+			shub_errf("CRITICAL: Index did not advance for cmd 0x%x. Possible infinite loop. index=%d\n",
+				  cmd, index);
+			ret = -EINVAL; // Set error and break
+		}
+
+		// If any case set an error, break out of the main while loop.
+		if (ret < 0)
+			break;
 	}
 
 	if (ret < 0) {
+		shub_errf("Error during dataframe parsing. Dumping buffer.\n");
 		print_dataframe(dataframe, frame_len);
-		return ret;
 	}
 
 	return ret;
@@ -456,29 +497,78 @@ void handle_packet(char *packet, int packet_size)
 		print_dataframe(packet, packet_size);
 #endif
 
+	/*
+	 * get_shub_msg is expected to parse the raw packet and allocate
+	 * memory for msg.buffer. We must be responsible for freeing this
+	 * buffer in all code paths within this function.
+	 */
 	ret = get_shub_msg(&msg, packet, packet_size);
-	if (ret)
+	if (ret) {
+		/*
+		 * If get_shub_msg fails, we assume it has already cleaned up
+		 * any partial allocations. If not, that's a bug in get_shub_msg.
+		 * Returning here is the correct action.
+		 */
+		shub_errf("get_shub_msg failed with error %d\n", ret);
 		return;
+	}
+
+	/*
+	 * Now we own msg.buffer and must ensure it is kfree'd before we exit,
+	 * unless we are passing ownership of it (like in the CMD_GETVALUE case).
+	 */
 
 	if (msg.cmd == CMD_GETVALUE) {
 		struct shub_msg *pending_msg;
 
 		pending_msg = get_msg_from_pending_list(msg);
 		if (pending_msg) {
-			kfree(pending_msg->buffer);
+			/*
+			 * We found a waiting thread. We give it the new buffer
+			 * and free its old one.
+			 */
+			kfree(pending_msg->buffer); /* Free the old buffer */
+			pending_msg->buffer = msg.buffer; /* Transfer ownership of the new buffer */
 			pending_msg->length = msg.length;
-			if (pending_msg->length != 0)
-				pending_msg->buffer = msg.buffer;
 
 			if (pending_msg->done != NULL && !completion_done(pending_msg->done))
 				complete(pending_msg->done);
+		} else {
+			/*
+			 * FIX: MEMORY LEAK.
+			 * No pending message was found to take ownership of msg.buffer.
+			 * We must free the buffer allocated by get_shub_msg ourselves.
+			 */
+			shub_errf("No pending message for CMD_GETVALUE, freeing buffer.\n");
+			kfree(msg.buffer);
 		}
 	} else if (msg.cmd == CMD_REPORT) {
-		parse_dataframe(msg.buffer, msg.length);
+		/*
+		 * This is the path that led to the original bug.
+		 * We pass the buffer to the parsing function and then free it.
+		 */
+
+		// FIX: ADDED ERROR HANDLING.
+		ret = parse_dataframe(msg.buffer, msg.length);
+		if (ret < 0) {
+			shub_errf("parse_dataframe failed with error %d\n", ret);
+			/*
+			 * Even if parsing fails, we still own msg.buffer and must free it.
+			 * The 'kfree' below will handle this.
+			 */
+		}
+
 		kfree(msg.buffer);
 	} else {
-		shub_errf("msg_cmd : %d, packet size %d", msg.cmd, packet_size);
+		/*
+		 * This is an unknown or unsupported command.
+		 * We must free the buffer allocated by get_shub_msg.
+		 */
+		shub_errf("Unknown msg_cmd: %d, packet size %d\n", msg.cmd, packet_size);
 		print_dataframe(packet, packet_size);
+
+		// FIX: MEMORY LEAK.
+		kfree(msg.buffer);
 	}
 }
 
