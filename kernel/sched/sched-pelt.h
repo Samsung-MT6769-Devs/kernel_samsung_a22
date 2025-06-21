@@ -69,7 +69,7 @@ static const u32 runnable_avg_yN_sum[] = {
 	    0,  861, 1585, 2193, 2705, 3135, 3497, 3801, 4057,
 };
 
-#define LOAD_AVG_PERIOD 8
+#define LOAD_AVG_PERIOD 4
 #define LOAD_AVG_MAX 6430
 #define LOAD_AVG_MAX_N 41
 
