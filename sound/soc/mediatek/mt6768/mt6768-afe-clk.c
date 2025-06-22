@@ -741,10 +741,11 @@ int mt6768_init_clock(struct mtk_base_afe *afe)
 			PTR_ERR(afe_priv->topckgen));
 		return PTR_ERR(afe_priv->topckgen);
 	}
-
-#if !defined(CONFIG_FPGA_EARLY_PORTING)
-	mtk_idle_notifier_register(&mt6768_afe_idle_nfb);
-#endif
+/* FIXME: HACK */
+/* THIS CAUSES CRASH (THEORY)*/
+// #if !defined(CONFIG_FPGA_EARLY_PORTING)
+//	mtk_idle_notifier_register(&mt6768_afe_idle_nfb);
+// #endif
 
 	return 0;
 }

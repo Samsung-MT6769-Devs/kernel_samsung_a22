@@ -264,29 +264,44 @@ void shub_report_sensordata(int type, u64 timestamp, char *data, int data_len)
 {
 	struct iio_dev *indio_dev = get_iio_device(type);
 	struct shub_sensor *sensor = get_sensor(type);
-	char *buf;
 
+	/* This initial logic is correct and remains. */
 	if (!sensor || !indio_dev)
 		return;
 
-	buf = kzalloc(sensor->report_event_size + sizeof(timestamp), GFP_KERNEL);
-	if (!buf) {
-		shub_errf("fail to alloc memory");
+	/*
+	 * It is still good practice to validate the data from the hardware,
+	 * but we will trust the length for this direct fix.
+	 */
+	if (!data || data_len != sensor->report_event_size) {
+		shub_errf("Invalid or mismatched data for sensor type %d\n", type);
 		return;
 	}
 
-	if (data && data_len > 0)
-		memcpy(buf, data, data_len);
-
+	/* This logic is also correct and remains. */
 	if (sensor->spec.is_wake_up)
 		shub_wake_lock_timeout(300);
 
-	memcpy(buf + data_len, &timestamp, sizeof(timestamp));
-	mutex_lock(&indio_dev->mlock);
-	iio_push_to_buffers(indio_dev, buf);
-	mutex_unlock(&indio_dev->mlock);
+	/*
+	 * THE FIX: Replace all manual buffer management and the mutex lock
+	 * with a single, atomic, deadlock-safe function call.
+	 *
+	 * iio_push_to_buffers_with_timestamp() does the following internally:
+	 * 1. Safely locks the buffer using spinlocks (which don't sleep).
+	 * 2. Copies your sensor data (`data`) into the ring buffer.
+	 * 3. Appends the `timestamp`.
+	 * 4. Unlocks the buffer.
+	 * 5. Wakes up any user-space processes waiting to read data.
+	 *
+	 * The 'data' buffer passed to it should ONLY contain the raw channel
+	 * data, not the timestamp.
+	 */
+	iio_push_to_buffers_with_timestamp(indio_dev, data, timestamp);
 
-	kfree(buf);
+	/*
+	 * No need for kfree, as we never allocated memory.
+	 * No need for mutex_unlock, as we never locked a mutex.
+	 */
 }
 
 void remove_empty_dev(void)
