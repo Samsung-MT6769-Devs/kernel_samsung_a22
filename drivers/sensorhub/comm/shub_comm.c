@@ -23,10 +23,8 @@
 #include "shub_cmd.h"
 
 #include <linux/kernel.h>
-#include <linux/slab.h>
 #include <linux/mutex.h>
-// FIX: Include spinlock header for IRQ-safe locking
-#include <linux/spinlock.h>
+#include <linux/slab.h>
 
 #define SHUB_CMD_SIZE		64
 
@@ -57,16 +55,9 @@ struct shub_msg {
 
 #define SHUB_MSG_HEADER_SIZE	offsetof(struct shub_msg, buffer)
 
-// FIX: comm_mutex is only used by process-context send functions, so it can remain a mutex.
 struct mutex comm_mutex;
-
-// FIX: pending_mutex is accessed by IRQ context (handle_packet) and process context (shub_send_command_wait).
-// It MUST be a spinlock to prevent deadlocks.
-static DEFINE_SPINLOCK(pending_mutex);
-
-// FIX: rx_msg_mutex is accessed by IRQ context. It MUST be a spinlock.
-static DEFINE_SPINLOCK(rx_msg_mutex);
-
+struct mutex pending_mutex;
+struct mutex rx_msg_mutex;
 struct list_head pending_list;
 
 unsigned int cnt_timeout;
@@ -173,7 +164,6 @@ int shub_send_command_wait(u8 cmd, u8 type, u8 subcmd, int timeout, char *send_b
 	int ret = 0;
 	DECLARE_COMPLETION_ONSTACK(done);
 	struct shub_msg *msg;
-	unsigned long flags;
 
 	if (cmd != CMD_GETVALUE) {
 		shub_errf("invalid command %d", cmd);
@@ -189,18 +179,17 @@ int shub_send_command_wait(u8 cmd, u8 type, u8 subcmd, int timeout, char *send_b
 
 	msg->done = &done;
 
-	// FIX: Use IRQ-safe spinlock
-	spin_lock_irqsave(&pending_mutex, flags);
+	mutex_lock(&pending_mutex);
 	list_add_tail(&msg->list, &pending_list);
-	spin_unlock_irqrestore(&pending_mutex, flags);
+	mutex_unlock(&pending_mutex);
 
 	ret = comm_to_sensorhub(msg);
 	if (ret < 0) {
 		shub_errf("comm_to_sensorhub FAILED.");
 
-		spin_lock_irqsave(&pending_mutex, flags);
+		mutex_lock(&pending_mutex);
 		list_del(&msg->list);
-		spin_unlock_irqrestore(&pending_mutex, flags);
+		mutex_unlock(&pending_mutex);
 		goto exit;
 	}
 
@@ -217,9 +206,9 @@ int shub_send_command_wait(u8 cmd, u8 type, u8 subcmd, int timeout, char *send_b
 		bool is_shub_shutdown = !is_shub_working();
 
 		msg->done = NULL;
-		spin_lock_irqsave(&pending_mutex, flags);
+		mutex_lock(&pending_mutex);
 		list_del(&msg->list);
-		spin_unlock_irqrestore(&pending_mutex, flags);
+		mutex_unlock(&pending_mutex);
 		cnt_timeout += (is_shub_shutdown) ? 0 : 1;
 
 		shub_errf("timeout(%d %d %d). cnt_timeout %d, shub_down %d", cmd, type, subcmd, cnt_timeout,
@@ -246,11 +235,10 @@ exit:
 void clean_pending_list(void)
 {
 	struct shub_msg *msg, *n;
-	unsigned long flags;
 
 	shub_infof("");
 
-	spin_lock_irqsave(&pending_mutex, flags);
+	mutex_lock(&pending_mutex);
 	list_for_each_entry_safe(msg, n, &pending_list, list) {
 		list_del(&msg->list);
 		if (msg->done != NULL && !completion_done(msg->done)) {
@@ -258,13 +246,12 @@ void clean_pending_list(void)
 			complete(msg->done);
 		}
 	}
-	spin_unlock_irqrestore(&pending_mutex, flags);
+	mutex_unlock(&pending_mutex);
 }
 
-// This function is now safe. The fixes from the commit were good.
 static int parse_dataframe(char *dataframe, int frame_len)
 {
-	int index = 0;
+	int index;
 	int ret = 0;
 	struct shub_sensor *sensor;
 
@@ -273,17 +260,11 @@ static int parse_dataframe(char *dataframe, int frame_len)
 		return 0;
 	}
 
-	while (index < frame_len) {
-		int cmd;
-		int reset_type, no_event_type;
-		int prev_index = index;
+	// print_dataframe(data, dataframe, frame_len);
 
-		cmd = dataframe[index++];
-		if (index > frame_len) {
-			shub_errf("Read past buffer end trying to get cmd\n");
-			ret = -EINVAL;
-			break;
-		}
+	for (index = 0; index < frame_len && (ret == 0);) {
+		int cmd = dataframe[index++];
+		int reset_type, no_event_type;
 
 		switch (cmd) {
 		case SHUB2AP_DEBUG_DATA:
@@ -300,17 +281,13 @@ static int parse_dataframe(char *dataframe, int frame_len)
 			break;
 		case SHUB2AP_GYRO_CAL:
 			sensor = get_sensor(SENSOR_TYPE_GYROSCOPE);
-			if (sensor && sensor->funcs && sensor->funcs->parsing_data)
+			if (sensor)
 				ret = sensor->funcs->parsing_data(dataframe, &index, frame_len);
-			else
-				shub_errf("No parser for GYRO_CAL\n");
 			break;
 		case SHUB2AP_MAG_CAL:
 			sensor = get_sensor(SENSOR_TYPE_GEOMAGNETIC_FIELD);
-			if (sensor && sensor->funcs && sensor->funcs->parsing_data)
+			if (sensor)
 				ret = sensor->funcs->parsing_data(dataframe, &index, frame_len);
-			else
-				shub_errf("No parser for MAG_CAL\n");
 			break;
 		case SHUB2AP_SYSTEM_INFO:
 			ret = print_system_info(dataframe + index, &index, frame_len);
@@ -335,10 +312,8 @@ static int parse_dataframe(char *dataframe, int frame_len)
 			break;
 		case SHUB2AP_PROX_THRESH:
 			sensor = get_sensor(SENSOR_TYPE_PROXIMITY);
-			if (sensor && sensor->funcs && sensor->funcs->parsing_data)
-				ret = sensor->funcs->parsing_data(dataframe, &index, frame_len);
-			else
-				shub_errf("No parser for PROX_THRESH\n");
+			if (sensor)
+				sensor->funcs->parsing_data(dataframe, &index, frame_len);
 			break;
 		case SHUB2AP_LOG_DUMP:
 			ret = save_log_dump(dataframe, &index, frame_len);
@@ -347,50 +322,31 @@ static int parse_dataframe(char *dataframe, int frame_len)
 			ret = parsing_big_data(dataframe, &index, frame_len);
 			break;
 		default:
-			shub_errf("0x%x cmd doesn't support, index = %d\n", cmd, index);
-			ret = -EOPNOTSUPP;
+			shub_errf("0x%x cmd doesn't support, index = %d", cmd, index);
+			ret = -1;
 			break;
 		}
-
-		if (index > frame_len) {
-			shub_errf("CRITICAL: Buffer over-read detected after cmd 0x%x. index=%d, frame_len=%d\n",
-				  cmd, index, frame_len);
-			ret = -EINVAL;
-		}
-
-		if (index <= prev_index) {
-			shub_errf("CRITICAL: Index did not advance for cmd 0x%x. Possible infinite loop. index=%d\n",
-				  cmd, index);
-			ret = -EINVAL;
-		}
-
-		if (ret < 0)
-			break;
 	}
 
 	if (ret < 0) {
-		shub_errf("Error during dataframe parsing. Dumping buffer.\n");
 		print_dataframe(dataframe, frame_len);
+		return ret;
 	}
 
 	return ret;
 }
 
-// FIX: Corrected function to be IRQ-safe
+
 int get_shub_msg_big_buffer(struct shub_msg *msg, char *packet, int packet_size)
 {
 	int ret = 0;
-	unsigned long flags;
 
-	// FIX: Use spinlock instead of mutex
-	spin_lock_irqsave(&rx_msg_mutex, flags);
-
+	mutex_lock(&rx_msg_mutex);
 	if (rx_msg.timestamp != msg->timestamp) {
 		kfree(rx_msg.buffer);
 		memcpy(&rx_msg, msg, SHUB_MSG_HEADER_SIZE);
 		rx_msg.length = 0;
-		// FIX: Use GFP_ATOMIC for allocation in IRQ context
-		rx_msg.buffer = kzalloc(rx_msg.total_length, GFP_ATOMIC);
+		rx_msg.buffer = kzalloc(rx_msg.total_length, GFP_KERNEL);
 		if (ZERO_OR_NULL_PTR(rx_msg.buffer)) {
 			shub_errf("fail to alloc memory for total buffer(%d %d %d)", msg->cmd, msg->type,
 					msg->subcmd);
@@ -415,18 +371,16 @@ int get_shub_msg_big_buffer(struct shub_msg *msg, char *packet, int packet_size)
 		memset(&rx_msg, 0, sizeof(struct shub_msg));
 		ret = 0;
 	} else {
-		// This is an intermediate packet. Indicate that we are still processing.
-		ret = 1;
+		ret = -EINVAL;
 	}
 
-	spin_unlock_irqrestore(&rx_msg_mutex, flags);
+	mutex_unlock(&rx_msg_mutex);
 	return ret;
-
 msg_error:
 	kfree(rx_msg.buffer);
 msg_alloc_error:
 	memset(&rx_msg, 0, sizeof(struct shub_msg));
-	spin_unlock_irqrestore(&rx_msg_mutex, flags);
+	mutex_unlock(&rx_msg_mutex);
 	return ret;
 }
 
@@ -437,8 +391,7 @@ int get_shub_msg_buffer(struct shub_msg *msg, char *packet, int packet_size)
 	if (msg->total_length != msg->length) {
 		ret = get_shub_msg_big_buffer(msg, packet, packet_size);
 	} else {
-		// FIX: Ensure GFP_ATOMIC is used for all allocations in this path.
-		msg->buffer = kzalloc(msg->length, GFP_ATOMIC);
+		msg->buffer = kzalloc(msg->length, GFP_KERNEL);
 		if (ZERO_OR_NULL_PTR(msg->buffer)) {
 			shub_errf("fail to alloc memory for msg buffer(%d %d %d)", msg->cmd, msg->type, msg->subcmd);
 			return -ENOMEM;
@@ -471,10 +424,8 @@ struct shub_msg *get_msg_from_pending_list(struct shub_msg msg)
 {
 	struct shub_msg *m, *n;
 	struct shub_msg *found_msg = NULL;
-	unsigned long flags;
 
-	// FIX: Use IRQ-safe spinlock
-	spin_lock_irqsave(&pending_mutex, flags);
+	mutex_lock(&pending_mutex);
 	if (!list_empty(&pending_list)) {
 		list_for_each_entry_safe(m, n, &pending_list, list) {
 			if ((m->cmd == msg.cmd) && (m->type == msg.type) && (m->subcmd == msg.subcmd)) {
@@ -490,7 +441,7 @@ struct shub_msg *get_msg_from_pending_list(struct shub_msg msg)
 		shub_errf("List empty error(%d %d %d)", msg.cmd, msg.type, msg.subcmd);
 	}
 
-	spin_unlock_irqrestore(&pending_mutex, flags);
+	mutex_unlock(&pending_mutex);
 
 	return found_msg;
 }
@@ -506,42 +457,28 @@ void handle_packet(char *packet, int packet_size)
 #endif
 
 	ret = get_shub_msg(&msg, packet, packet_size);
-	// FIX: Handle the case where a large message is still being assembled
-	if (ret > 0) {
-		// Intermediate packet for a big message was handled. Do nothing.
+	if (ret)
 		return;
-	} else if (ret < 0) {
-		shub_errf("get_shub_msg failed with error %d\n", ret);
-		return;
-	}
 
-	// If get_shub_msg returns 0, we now own msg.buffer and must free it.
 	if (msg.cmd == CMD_GETVALUE) {
 		struct shub_msg *pending_msg;
 
 		pending_msg = get_msg_from_pending_list(msg);
 		if (pending_msg) {
 			kfree(pending_msg->buffer);
-			pending_msg->buffer = msg.buffer; // Transfer ownership
 			pending_msg->length = msg.length;
+			if (pending_msg->length != 0)
+				pending_msg->buffer = msg.buffer;
 
 			if (pending_msg->done != NULL && !completion_done(pending_msg->done))
 				complete(pending_msg->done);
-		} else {
-			shub_errf("No pending message for CMD_GETVALUE, freeing buffer.\n");
-			kfree(msg.buffer);
 		}
 	} else if (msg.cmd == CMD_REPORT) {
-		ret = parse_dataframe(msg.buffer, msg.length);
-		if (ret < 0) {
-			shub_errf("parse_dataframe failed with error %d\n", ret);
-		}
-
+		parse_dataframe(msg.buffer, msg.length);
 		kfree(msg.buffer);
 	} else {
-		shub_errf("Unknown msg_cmd: %d, packet size %d\n", msg.cmd, packet_size);
+		shub_errf("msg_cmd : %d, packet size %d", msg.cmd, packet_size);
 		print_dataframe(packet, packet_size);
-		kfree(msg.buffer);
 	}
 }
 
@@ -563,10 +500,8 @@ void stop_comm_to_hub(void)
 int init_comm_to_hub(void)
 {
 	mutex_init(&comm_mutex);
-	// FIX: Initialize spinlocks instead of mutexes
-	spin_lock_init(&pending_mutex);
-	spin_lock_init(&rx_msg_mutex);
-
+	mutex_init(&pending_mutex);
+	mutex_init(&rx_msg_mutex);
 	INIT_LIST_HEAD(&pending_list);
 
 	cnt_timeout = 0;
@@ -580,5 +515,6 @@ void exit_comm_to_hub(void)
 {
 	clean_pending_list();
 	mutex_destroy(&comm_mutex);
-	// No destroy function for statically defined spinlocks
+	mutex_destroy(&pending_mutex);
+	mutex_destroy(&rx_msg_mutex);
 }
