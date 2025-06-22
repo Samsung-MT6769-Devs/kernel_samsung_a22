@@ -495,10 +495,7 @@ int parsing_bypass_data(char *dataframe, int *index, int frame_len)
 	u16 batch_event_count;
 	int type = dataframe[(*index)++];
 	struct shub_sensor *sensor;
-	// --- ADDED: Create a safe, temporary buffer on the non-pageable kernel stack ---
-	u8 value_on_stack[64]; // A buffer large enough for any sensor's data.
-	struct sensor_event event_on_stack;
-	// ---
+	struct sensor_event *event;
 
 	if ((type < 0) || (type >= SENSOR_TYPE_LEGACY_MAX)) {
 		shub_errf("Parsing error : Mcu bypass dataframe err %d", type);
@@ -510,45 +507,28 @@ int parsing_bypass_data(char *dataframe, int *index, int frame_len)
 		shub_errf("Parsing error : sensor(%d) is null", type);
 		return -1;
 	}
-	// --- ADDED: Point our stack-based event to our stack-based buffer ---
-	event_on_stack.value = value_on_stack;
 
-	// Safety check to prevent buffer overflows if a sensor has an unexpectedly large event size.
-	if (sensor->report_event_size > sizeof(value_on_stack)) {
-		shub_errf("Sensor %d event size %u is larger than stack buffer %lu\n",
-			  type, sensor->report_event_size, sizeof(value_on_stack));
-		return -EINVAL;
-	}
-
-	// Boundary check before reading batch_event_count
-	if ((*index) + sizeof(u16) > frame_len) {
-		shub_errf("Parsing error: not enough data for batch count for sensor %d\n", type);
-		return -EINVAL;
-	}
-
-	memcpy(&batch_event_count, dataframe + (*index), sizeof(u16));
+	event = get_sensor_event(type);
+	memcpy(&batch_event_count, dataframe + (*index), 2);
 	(*index) += 2;
 
-	// THE FIX: Use a 'while' loop instead of 'do-while'.
-	// This ensures we don't enter the loop if batch_event_count is 0.
-	while ((batch_event_count > 0) && ((*index) < frame_len)) {
-		// --- MODIFIED: Parse data into our SAFE stack buffer ---
-		if (get_sensor_value(type, dataframe, index, &event_on_stack, frame_len) < 0) {
-			shub_errf("Parsing error : sensor(%d) event error\n", type);
-			/*
-			 * If we fail to parse one event in a batch, it's safer
-			 * to stop processing the entire corrupt batch.
-			 */
+	do {
+		if (get_sensor_value(type, dataframe, index, event, frame_len) < 0) {
+			shub_errf("Parsing error : sensor(%d) event error", type);
 			return -EINVAL;
 		}
-		// ---
-
 		EXECUTE_FUNC(sensor, sensor->funcs->report_event);
-		// --- MODIFIED: Report data from our SAFE stack buffer ---
-		shub_report_sensordata(type, event_on_stack.timestamp, event_on_stack.value, sensor->report_event_size);
-		// ---
+		shub_report_sensordata(type, event->timestamp, event->value, sensor->report_event_size);
+#ifdef CONFIG_SHUB_DEBUG
+		shub_system_check_lock();
+		if (is_system_checking())
+			event_test_cb(type, event->timestamp);
+		if (is_event_order_checking())
+			order_test_cb(type, event->timestamp);
+		shub_system_check_unlock();
+#endif
 		batch_event_count--;
-	}
+	} while ((batch_event_count > 0) && ((*index) < frame_len));
 
 	return 0;
 }
@@ -606,6 +586,13 @@ int parsing_meta_data(char *dataframe, int *index, int frame_len)
 	} else {
 		shub_errf("failed to alloc");
 	}
+
+#ifdef CONFIG_SHUB_DEBUG
+	shub_system_check_lock();
+	if (is_system_checking())
+		comm_test_cb(type);
+	shub_system_check_unlock();
+#endif
 
 	kfree(meta_event);
 	return ret;
