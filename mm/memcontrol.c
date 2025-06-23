@@ -4361,9 +4361,7 @@ static void __mem_cgroup_free(struct mem_cgroup *memcg)
 
 	for_each_node(node)
 		free_mem_cgroup_per_node_info(memcg, node);
-	free_percpu(memcg->stat);
-	/* poison memcg before freeing it */
-	memset(memcg, 0x78, sizeof(struct mem_cgroup));
+	free_percpu(memcg->stat_cpu);
 	kfree(memcg);
 }
 

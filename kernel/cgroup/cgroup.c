@@ -4766,8 +4766,11 @@ static void css_free_work_fn(struct work_struct *work)
 	struct cgroup_subsys *ss = css->ss;
 	struct cgroup *cgrp = css->cgroup;
 
-	percpu_ref_exit(&css->refcnt);
-
+	/* only undo percpu_ref_init() if it ever ran: */
+	if (css->refcnt.percpu_count_ptr != __PERCPU_REF_ATOMIC_DEAD) {
+		/* this checks percpu_count_ptr(&css->refcnt) != NULL too */
+		percpu_ref_exit(&css->refcnt);
+	}
 	if (ss) {
 		/* css free path */
 		struct cgroup_subsys_state *parent = css->parent;
