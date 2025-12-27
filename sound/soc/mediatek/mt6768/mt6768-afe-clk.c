@@ -700,7 +700,7 @@ static int mt6768_afe_idle_notify_call(struct notifier_block *nfb,
 	return NOTIFY_OK;
 }
 
-static struct notifier_block mt6768_afe_idle_nfb = {
+static struct notifier_block mt6768_afe_idle_nfb __maybe_unused = {
 	.notifier_call = mt6768_afe_idle_notify_call,
 };
 #endif
