@@ -138,6 +138,15 @@
 #define KPROBE_BLACKLIST()
 #endif
 
+#ifdef CONFIG_FUNCTION_ERROR_INJECTION
+#define ERROR_INJECT_WHITELIST()	STRUCT_ALIGN();			      \
+			VMLINUX_SYMBOL(__start_error_injection_whitelist) = .;\
+			KEEP(*(_error_injection_whitelist))		      \
+			VMLINUX_SYMBOL(__stop_error_injection_whitelist) = .;
+#else
+#define ERROR_INJECT_WHITELIST()
+#endif
+
 #ifdef CONFIG_EVENT_TRACING
 #define FTRACE_EVENTS()	. = ALIGN(8);					\
 			VMLINUX_SYMBOL(__start_ftrace_events) = .;	\
@@ -187,6 +196,15 @@
 			 VMLINUX_SYMBOL(__earlycon_table_end) = .;
 #else
 #define EARLYCON_TABLE()
+#endif
+
+#ifdef CONFIG_SECURITY
+#define LSM_TABLE()	. = ALIGN(8);					\
+			VMLINUX_SYMBOL(__start_lsm_info) = .;				\
+			KEEP(*(.lsm_info.init))				\
+			VMLINUX_SYMBOL(__end_lsm_info) = .;
+#else
+#define LSM_TABLE()
 #endif
 
 #define ___OF_TABLE(cfg, name)	_OF_TABLE_##cfg(name)
@@ -278,7 +296,11 @@
 #define INIT_TASK_DATA(align)						\
 	. = ALIGN(align);						\
 	VMLINUX_SYMBOL(__start_init_task) = .;				\
+	VMLINUX_SYMBOL(init_thread_union) = .;				\
+	VMLINUX_SYMBOL(init_stack) = .;					\
 	*(.data..init_task)						\
+	*(.data..init_thread_info)					\
+	. = VMLINUX_SYMBOL(__start_init_task) + THREAD_SIZE;		\
 	VMLINUX_SYMBOL(__end_init_task) = .;
 
 /*
@@ -493,10 +515,12 @@
 		VMLINUX_SYMBOL(__start___modver) = .;			\
 		KEEP(*(__modver))					\
 		VMLINUX_SYMBOL(__stop___modver) = .;			\
-		. = ALIGN((align));					\
-		VMLINUX_SYMBOL(__end_rodata) = .;			\
 	}								\
-	. = ALIGN((align));
+									\
+	BTF								\
+									\
+	. = ALIGN((align));						\
+	VMLINUX_SYMBOL(__end_rodata) = .;
 
 /* RODATA & RO_DATA provided for backward compatibility.
  * All archs are supposed to use RO_DATA() */
@@ -599,6 +623,24 @@
 	}
 
 /*
+ * .BTF
+ */
+#ifdef CONFIG_DEBUG_INFO_BTF
+#define BTF								\
+	.BTF : AT(ADDR(.BTF) - LOAD_OFFSET) {				\
+		__start_BTF = .;					\
+		*(.BTF)							\
+		__stop_BTF = .;						\
+	}								\
+	. = ALIGN(4);							\
+	.BTF_ids : AT(ADDR(.BTF_ids) - LOAD_OFFSET) {			\
+		*(.BTF_ids)						\
+	}
+#else
+#define BTF
+#endif
+
+/*
  * Init task
  */
 #define INIT_TASK_DATA_SECTION(align)					\
@@ -629,6 +671,7 @@
 	FTRACE_EVENTS()							\
 	TRACE_SYSCALLS()						\
 	KPROBE_BLACKLIST()						\
+	ERROR_INJECT_WHITELIST()					\
 	MEM_DISCARD(init.rodata)					\
 	CLK_OF_TABLES()							\
 	RESERVEDMEM_OF_TABLES()						\
@@ -641,7 +684,8 @@
 	ACPI_PROBE_TABLE(irqchip)					\
 	ACPI_PROBE_TABLE(timer)						\
 	ACPI_PROBE_TABLE(iort)						\
-	EARLYCON_TABLE()
+	EARLYCON_TABLE()						\
+	LSM_TABLE()
 
 #define INIT_TEXT							\
 	*(.init.text .init.text.*)					\

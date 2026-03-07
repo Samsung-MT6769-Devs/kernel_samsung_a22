@@ -20,6 +20,7 @@ struct kern_ipc_perm;
 
 #ifdef CONFIG_SECURITY_SELINUX
 
+/* merge: retained as shim for in-tree callers outside security/selinux */
 /**
  * selinux_is_enabled - is SELinux enabled?
  */

@@ -6,6 +6,8 @@
  *
  */
 
+/* merge: retained for in-tree callers outside the modern rc-core paths */
+
 #ifndef _LINUX_LIRC_DEV_H
 #define _LINUX_LIRC_DEV_H
 

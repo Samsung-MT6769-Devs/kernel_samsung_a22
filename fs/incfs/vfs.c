@@ -24,7 +24,6 @@
 #include "pseudo_files.h"
 #include "sysfs.h"
 #include "verity.h"
-
 static int incfs_remount_fs(struct super_block *sb, int *flags, char *data);
 
 static int dentry_revalidate(struct dentry *dentry, unsigned int flags);
