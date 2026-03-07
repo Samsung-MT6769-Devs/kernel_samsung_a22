@@ -186,7 +186,7 @@ create_flashable_zip() {
     # Change this to an AnyKernel3 ZIP without the Image file in it
     local source_zip="/home/zears/Documents/WMKernel-ksunext-susfs.zip"
     local anykernel_dir="$PREFIX/AnyKernel3"
-    local kernel_image="$PREFIX/arch/arm64/boot/Image"
+    local kernel_image="$PREFIX/out/arch/arm64/boot/Image"
 
     print_section "FLASHABLE ZIP CREATION"
 

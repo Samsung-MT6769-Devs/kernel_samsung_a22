@@ -1853,11 +1853,29 @@ static inline int __pmd_alloc(struct mm_struct *mm, pud_t *pud,
 	return 0;
 }
 
+/*
+ * backport: retained as zero-valued shim for vendor debug callers after
+ * consolidated page table accounting removed per-level PMD counters.
+ */
+static inline unsigned long mm_nr_pmds(const struct mm_struct *mm)
+{
+	return 0;
+}
+
 static inline void mm_inc_nr_pmds(struct mm_struct *mm) {}
 static inline void mm_dec_nr_pmds(struct mm_struct *mm) {}
 
 #else
 int __pmd_alloc(struct mm_struct *mm, pud_t *pud, unsigned long address);
+
+/*
+ * backport: retained as zero-valued shim for vendor debug callers after
+ * consolidated page table accounting removed per-level PMD counters.
+ */
+static inline unsigned long mm_nr_pmds(const struct mm_struct *mm)
+{
+	return 0;
+}
 
 static inline void mm_inc_nr_pmds(struct mm_struct *mm)
 {

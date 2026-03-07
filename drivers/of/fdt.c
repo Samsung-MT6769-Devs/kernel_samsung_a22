@@ -1163,14 +1163,18 @@ int __init early_init_dt_scan_chosen(unsigned long node, const char *uname,
 
 	if (p != NULL && l > 0) {
 		if (concat_cmdline) {
-			int cmdline_len;
-			int copy_len;
+			/*
+			 * HACK: REVERSE ORDER OF CONCATENATION
+			 * Original: [CONFIG] + [BOOTLOADER] (Bootloader overrides Config)
+			 * New     : [BOOTLOADER] + [CONFIG] (Config overrides Bootloader)
+			 */
+			/* 1. Copy Bootloader Args (p) into cmdline first (Overwriting the Config that was there) */
+			/* Ensure we don't overflow if bootargs are huge */
+			strlcpy(cmdline, p, min((int)l + 1, COMMAND_LINE_SIZE));
+			/* 2. Append a space */
 			strlcat(cmdline, " ", COMMAND_LINE_SIZE);
-			cmdline_len = strlen(cmdline);
-			copy_len = COMMAND_LINE_SIZE - cmdline_len - 1;
-			copy_len = min((int)l, copy_len);
-			strncpy(cmdline + cmdline_len, p, copy_len);
-			cmdline[cmdline_len + copy_len] = '\0';
+			/* 3. Append the Kernel Config (config_cmdline) to the END */
+			strlcat(cmdline, config_cmdline, COMMAND_LINE_SIZE);
 		} else {
 			strlcpy(cmdline, p, min((int)l, COMMAND_LINE_SIZE));
 		}

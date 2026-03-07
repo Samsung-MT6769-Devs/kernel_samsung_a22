@@ -122,6 +122,12 @@ static inline u64 ktime_get_boottime_ns(void)
 	return ktime_to_ns(ktime_get_boottime());
 }
 
+/* backport: retained as shim over ktime_get_boottime_ns() for vendor callers */
+static inline u64 ktime_get_boot_ns(void)
+{
+	return ktime_get_boottime_ns();
+}
+
 static inline u64 ktime_get_clocktai_ns(void)
 {
 	return ktime_to_ns(ktime_get_clocktai());

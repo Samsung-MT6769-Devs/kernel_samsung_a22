@@ -272,6 +272,14 @@ void sec_debug_set_extra_info_backtrace(struct pt_regs *regs)
 
 	pr_crit("sec_debug_store_backtrace\n");
 
+	/*
+	 * Early exceptions can happen before the shared extra-info area is
+	 * initialized. Preserve the original fault instead of taking a second
+	 * null-deref while recording the backtrace.
+	 */
+	if (!sec_debug_extra_info)
+		return;
+
 	if (regs) {
 #ifdef CONFIG_MACH_MT6739
 		frame.fp = regs->ARM_fp;
@@ -324,6 +332,9 @@ void sec_debug_set_extra_info_wdt_lastpc(unsigned long stackframe[][WDT_FRAME], 
 	int sym_name_len;
 
 	pr_crit("sec_debug_store_wdt_lastpc\n");
+
+	if (!sec_debug_extra_info)
+		return;
 
 	for (cpu = 0; cpu < NR_CPUS; cpu++) {
 		if ((check & (1 << cpu)) && !(kick & (1 << cpu))) {

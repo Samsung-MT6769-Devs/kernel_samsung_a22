@@ -624,20 +624,25 @@ static void pstore_console_write(struct console *con, const char *s, unsigned c)
 static void pstore_simp_console_write(struct console *con, const char *s,
 		unsigned int c)
 {
+	struct pstore_info *psi = psinfo;
 	const char *e = s + c;
+
+	/* Vendor ram_console can call into pstore before a backend exists. */
+	if (!psi || !psi->write)
+		return;
 
 	while (s < e) {
 		struct pstore_record record;
 
-		pstore_record_init(&record, psinfo);
+		pstore_record_init(&record, psi);
 		record.type = PSTORE_TYPE_CONSOLE;
 
-		if (c > psinfo->bufsize)
-			c = psinfo->bufsize;
+		if (c > psi->bufsize)
+			c = psi->bufsize;
 
 		record.buf = (char *)s;
 		record.size = c;
-		psinfo->write(&record);
+		psi->write(&record);
 		s += c;
 		c = e - s;
 	}
@@ -645,21 +650,26 @@ static void pstore_simp_console_write(struct console *con, const char *s,
 
 void pstore_bconsole_write(struct console *con, const char *s, unsigned int c)
 {
+	struct pstore_info *psi = psinfo;
 	const char *e = s + c;
+
+	/* Vendor ram_console can call into pstore before a backend exists. */
+	if (!psi || !psi->write)
+		return;
 
 	while (s < e) {
 		struct pstore_record record;
 
-		pstore_record_init(&record, psinfo);
+		pstore_record_init(&record, psi);
 		record.type = PSTORE_TYPE_CONSOLE;
 		record.reason = 1;
 
-		if (c > psinfo->bufsize)
-			c = psinfo->bufsize;
+		if (c > psi->bufsize)
+			c = psi->bufsize;
 
 		record.buf = (char *)s;
 		record.size = c;
-		psinfo->write(&record);
+		psi->write(&record);
 		s += c;
 		c = e - s;
 	}

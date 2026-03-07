@@ -407,6 +407,7 @@ READELF		= $(CROSS_COMPILE)readelf
 STRIP		= $(CROSS_COMPILE)strip
 endif
 PAHOLE		= pahole
+PAHOLE_FLAGS	= $(shell PAHOLE=$(PAHOLE) $(CONFIG_SHELL) $(srctree)/scripts/pahole-flags.sh)
 RESOLVE_BTFIDS	= $(objtree)/tools/bpf/resolve_btfids/resolve_btfids
 AWK		= awk
 GENKSYMS	= scripts/genksyms/genksyms
@@ -473,6 +474,7 @@ export KBUILD_AFLAGS AFLAGS_KERNEL AFLAGS_MODULE
 export KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_MODULE KBUILD_LDFLAGS_MODULE
 export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
 export KBUILD_ARFLAGS
+export PAHOLE_FLAGS
 
 # When compiling out-of-tree modules, put MODVERDIR in the module
 # tree rather than in the kernel tree. The kernel tree might
@@ -1142,15 +1144,24 @@ export mod_sign_cmd
 
 HOST_LIBELF_LIBS = $(shell pkg-config libelf --libs 2>/dev/null || echo -lelf)
 
-ifdef CONFIG_STACK_VALIDATION
-  has_libelf := $(call try-run,\
+has_libelf := $(call try-run,\
 		echo "int main() {}" | $(HOSTCC) -xc -o /dev/null $(HOST_LIBELF_LIBS) -,1,0)
+
+ifdef CONFIG_STACK_VALIDATION
   ifeq ($(has_libelf),1)
     objtool_target := tools/objtool FORCE
   else
     SKIP_STACK_VALIDATION := 1
     export SKIP_STACK_VALIDATION
   endif
+endif
+
+ifdef CONFIG_DEBUG_INFO_BTF
+ifeq ($(has_libelf),1)
+resolve_btfids_target := $(RESOLVE_BTFIDS)
+else
+ERROR_RESOLVE_BTFIDS := 1
+endif
 endif
 
 PHONY += prepare0
@@ -1278,7 +1289,7 @@ prepare0: archprepare gcc-plugins
 	$(Q)$(MAKE) $(build)=.
 
 # All the preparing..
-prepare: prepare0 prepare-objtool
+prepare: prepare0 prepare-objtool prepare-resolve_btfids
 
 # Support for using generic headers in asm-generic
 PHONY += asm-generic uapi-asm-generic
@@ -1289,7 +1300,7 @@ uapi-asm-generic:
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.asm-generic \
 	            src=uapi/asm obj=arch/$(SRCARCH)/include/generated/uapi/asm
 
-PHONY += prepare-objtool
+PHONY += prepare-objtool prepare-resolve_btfids
 prepare-objtool: $(objtool_target)
 ifeq ($(SKIP_STACK_VALIDATION),1)
 ifdef CONFIG_UNWINDER_ORC
@@ -1299,6 +1310,18 @@ else
 	@echo "warning: Cannot use CONFIG_STACK_VALIDATION=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
 endif
 endif
+
+prepare-resolve_btfids: $(resolve_btfids_target)
+ifeq ($(ERROR_RESOLVE_BTFIDS),1)
+	@echo "error: Cannot generate BTF IDs for CONFIG_DEBUG_INFO_BTF=y, please install libelf-dev, libelf-devel or elfutils-libelf-devel" >&2
+	@false
+endif
+
+$(RESOLVE_BTFIDS): FORCE
+	$(Q)mkdir -p $(abspath $(dir $@))
+	$(Q)$(MAKE) -C $(srctree)/tools/bpf/resolve_btfids \
+		srctree=$(abspath $(srctree)) \
+		OUTPUT=$(abspath $(dir $@))/
 
 # Disable clang-specific config options when using a different compiler
 clang-specific-configs := LTO_CLANG CFI_CLANG SHADOW_CALL_STACK INIT_STACK_ALL_ZERO

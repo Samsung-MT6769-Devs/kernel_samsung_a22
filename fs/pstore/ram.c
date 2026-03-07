@@ -48,37 +48,27 @@
 static ulong record_size = MIN_MEM_SIZE;
 module_param(record_size, ulong, 0400);
 MODULE_PARM_DESC(record_size,
-		"size of each dump done on oops/panic");
+"size of each dump done on oops/panic");
 
-static ulong ramoops_console_size = MIN_MEM_SIZE;
-module_param_named(console_size, ramoops_console_size, ulong, 0400);
-MODULE_PARM_DESC(console_size, "size of kernel console log");
+static ulong ramoops_console_size = 0x18000;
 
 static ulong ramoops_ftrace_size = MIN_MEM_SIZE;
 module_param_named(ftrace_size, ramoops_ftrace_size, ulong, 0400);
 MODULE_PARM_DESC(ftrace_size, "size of ftrace log");
 
-static ulong ramoops_pmsg_size = MIN_MEM_SIZE;
-module_param_named(pmsg_size, ramoops_pmsg_size, ulong, 0400);
-MODULE_PARM_DESC(pmsg_size, "size of user space message log");
+static ulong ramoops_pmsg_size = 0x8000;
 
-static ulong mem_address;
-module_param_hw(mem_address, ulong, other, 0400);
-MODULE_PARM_DESC(mem_address,
-		"start of reserved RAM used to store oops/panic logs");
+static ulong mem_address = 0x4d010000;
 
-static ulong mem_size;
-module_param(mem_size, ulong, 0400);
-MODULE_PARM_DESC(mem_size,
-		"size of reserved RAM used to store oops/panic logs");
+static ulong mem_size = 0x40000;
 
 void pstore_set_addr_size(unsigned int addr, unsigned int size,
 		unsigned int console_size, unsigned int pmsg_size)
 {
-	mem_address = addr;
-	mem_size = size;
-	ramoops_console_size = console_size;
-	ramoops_pmsg_size = pmsg_size;
+	mem_address = 0x4d010000;
+	mem_size = 0x40000;
+	ramoops_console_size = 0x18000;
+	ramoops_pmsg_size = 0x8000;
 }
 
 static unsigned int mem_type;
@@ -768,14 +758,16 @@ static int ramoops_probe(struct platform_device *pdev)
 	int err = -EINVAL;
 
 	if (dev_of_node(dev) && !pdata) {
-		pdata = &pdata_local;
-		memset(pdata, 0, sizeof(*pdata));
-
-		err = ramoops_parse_dt(pdev, pdata);
-		if (err < 0)
-			goto fail_out;
+    	pdata = &pdata_local;
+    	memset(pdata, 0, sizeof(*pdata));
+    	pdata->mem_size = mem_size;
+    	pdata->mem_address = mem_address;
+    	pdata->console_size = ramoops_console_size;
+    	pdata->pmsg_size = ramoops_pmsg_size;
+    	pdata->record_size = record_size;
+    	pdata->ftrace_size = ramoops_ftrace_size;
+    	pdata->dump_oops = dump_oops;
 	}
-
 	/*
 	 * Only a single ramoops area allowed at a time, so fail extra
 	 * probes.

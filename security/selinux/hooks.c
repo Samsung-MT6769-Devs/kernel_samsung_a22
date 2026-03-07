@@ -4164,7 +4164,7 @@ static int selinux_task_alloc(struct task_struct *task,
 	return avc_has_perm(&selinux_state,
 			    sid, sid, SECCLASS_PROCESS, PROCESS__FORK, NULL);
 }
-
+/*
  * prepare a new set of credentials for modification
  */
 static int selinux_cred_prepare(struct cred *new, const struct cred *old,
